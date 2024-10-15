@@ -103,13 +103,59 @@ def build_tree(relationships):
     return result_tree
 
 
+# Every Branch holds exactly 3 properties and is a part of the
+# hierarchical structure of the product tree.
+# The properties name and category are mandatory.
+# In addition, the object contains either a branches or a product property.
+
+
+def is_ignored_branch(branch: dict) -> bool:
+    if "category" in branch and "name" in branch and "jboss" in branch["name"].lower():
+        return True
+
+    # if (
+    #     "category" in branch
+    #     and "name" in branch
+    #     # and branch["category"] == "architecture"
+    #     # and branch["name"] != "src"
+    # ):
+    #     return True
+    return False
+
+
+def print_product_tree(branches: list[dict], indent=""):
+    if len(branches) > 5 and all("product" in b for b in branches):
+        branches = branches[0:5]
+    for b in branches:
+        if "product" in b:
+            msg = f"{indent}product ID: {b['product']['product_id']}"
+            if "product_identification_helper" in b["product"]:
+                msg = f"{msg} {b['product']['product_identification_helper']}"
+            print(msg)
+        elif "branches" in b:
+            if is_ignored_branch(b):
+                continue
+            print(f"{indent}{b['category']}: {b['name']}")
+            print_product_tree(b["branches"], f"  ->{indent}")
+        else:
+            raise ValueError(f"branch must have 'product' or 'branches, but got {b}")
+
+        # if "product" in b:
+        # elif "category" in b and "name" in b:
+        # if "branches" in b:
+        #     print_product_tree(b["branches"], indent=f"  ->{indent}")
+
+
 def print_tree(tree, indent=""):
     """
     Recursively prints the tree in a nicely formatted way.
     """
     for key, value in tree.items():
-        print(f"{indent}{key}")
-        if isinstance(value, dict):
+        leaf = not isinstance(value, dict)
+        leaf = leaf or len(value) == 0
+        if not leaf or key.endswith(".src"):
+            print(f"{indent}{key}")
+        if not leaf:
             print_tree(value, indent + "    ")
 
 
@@ -125,7 +171,10 @@ def run(path: str):
         for pid in products:
             affected_product_codes.add(pid)
     tree = build_tree(doc["product_tree"]["relationships"])
+    # for root in tree:
+    #     print(root)
     print_tree(tree)
+    print_product_tree(doc["product_tree"]["branches"])
 
 
 if __name__ == "__main__":
