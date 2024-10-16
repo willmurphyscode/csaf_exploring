@@ -180,3 +180,195 @@ clean, accurate, simple view of the vulnerability and it's affected packages
 based on digging through the CSAF_VEX JSONs and maybe (though I hope I only
 need the vex) the CSAF Advisory JSONs if necessary.
 
+I need to go from this giant JSON to a human-readable package name.
+
+For example, cve-2022-23943 is about a vulnerability in httpd2. But there
+are 349 unique product IDs listed in the remediations section:
+
+``` sh
+❯ cat cve-2022-23943.json| jq '.vulnerabilities[0].remediations[] | .product_ids[]' | sort |uniq | wc -l
+     349
+```
+
+This process breaks down into 2 pieces:
+
+1. scan through the arrays of product IDs (the 5 kinds above) to identify
+   groups of products with given conditions
+2. De-reference and de-dupe the product IDs by looking a `.product_tree` in the
+   doc
+
+I think the biggest issue I'm having is understanding the product tree node of
+the doc. There are _two_ different product trees.
+
+`.product_tree.branches` is an array of sub-trees (objects in the array might
+have `branches` as a key, recursively), and describes a tree of products.
+
+`product_tree.relationships` is _also_ a forest, except that it is expressed as
+a flat list of relationships, e.g. `product A is a default component of product
+B`
+
+What I'm trying to understand is, why are there two trees of product relationships?
+
+The answer, I guess, is that the relate the products on different axes.
+
+The outer most `product_tree.branches` always has length 1:
+
+``` sh
+❯ zstdcat *.tar.zst | tar -Oxf - | jq -c -r 'select(.product_tree != null) | select(.product_tree.branches != null) | .product_tree.branches | length' | sort | uniq -c
+17410 1
+
+❯ zstdcat *.tar.zst | tar -Oxf - | jq -c -r 'select(.product_tree != null) | select(.product_tree.branches != null) | .product_tree.branches[0].category' | sort | uniq -c
+17410 vendor
+
+csaf on  main [!?] is 📦 v0.1.0 via 🐍 v3.11.8 (csaf) took 43s 
+❯ zstdcat *.tar.zst | tar -Oxf - | jq -c -r 'select(.product_tree != null) | select(.product_tree.branches != null) | .product_tree.branches[0].name' | sort | uniq -c
+17410 Red Hat
+```
+
+So everything under `branches[0]` is just `vendor: Red Hat`.
+
+But `.product_tree.brances[0].branches` has very variable length, ranging from
+1018 to 3.
+
+``` sh
+❯ zstdcat *.tar.zst | tar -Oxf - | jq -c -r 'select(.product_tree != null) | select(.product_tree.branches != null) | .product_tree.branches[0].branches[] | .category' | sort | uniq -c | sort
+ -n 
+17410 product_family
+18450 product_version
+73536 architecture
+```
+
+So this is telling me that there are 3 substrees under the "Vendor: Red Hat"
+tree.
+
+Lets see what product families exist:
+
+``` sh
+$ zstdcat *.tar.zst | tar -Oxf - | jq -c -r 'select(.product_tree != null) | select(.product_tree.branches != null) | .product_tree.branches[0].branches[] | select(.category == "product_famil
+y") | .name ' | sort | uniq -c | sort -n
+... snip ... 
+ 182 Red Hat JBoss Web Server
+ 200 Red Hat Linux
+ 314 Red Hat Virtualization
+ 342 Red Hat Software Collections
+ 542 Red Hat Enterprise Linux Supplementary
+ 604 Red Hat JBoss Enterprise Application Platform
+ 733 Red Hat OpenStack Platform
+1073 Red Hat OpenShift Enterprise
+10426 Red Hat Enterprise Linux
+```
+
+There are a few architectures:
+
+``` sh
+❯ zstdcat *.tar.zst | tar -Oxf - | jq -c -r 'select(.product_tree != null) | select(.product_tree.branches != null) | .product_tree.branches[0].branches[] | select(.category == "architecture"
+) | .name ' | sort | uniq -c | sort -n
+  24 ia32e
+  26 ppc64pseries
+  30 athlon
+  55 i586
+  81 ppc64iseries
+ 521 arm64
+1146 amd64
+1844 ia64
+2383 i386
+2587 s390
+2875 ppc
+3525 ppc64
+4399 aarch64
+4585 i686
+6452 noarch
+7618 ppc64le
+9116 s390x
+12455 x86_64
+13814 src
+```
+
+Product versions are too numerous to list.
+
+So now the question is: what do we do next with the relationships.
+
+First observation: Every relationship in the rhel data is just "default_component_of":
+
+```sh
+❯ zstdcat *.tar.zst | tar -Oxf - | jq -c -r 'select(.product_tree != null) | select(.product_tree.relationships != null) | .product_tree.relationships[] | .category ' | sort | uniq -c | sort 
+-n
+2092023 default_component_of
+```
+
+The example of on the CSAF spec might be instructive here:
+
+Example 42:
+``` json 
+  "product_tree": {
+    "full_product_names": [
+      {
+        "product_id": "CSAFPID-908070601",
+        "name": "Cisco AnyConnect Secure Mobility Client 4.9.04053"
+      },
+      {
+        "product_id": "CSAFPID-908070602",
+        "name": "Microsoft Windows"
+      }
+    ],
+    "relationships": [
+      {
+        "product_reference": "CSAFPID-908070601",
+        "category": "installed_on",
+        "relates_to_product_reference": "CSAFPID-908070602",
+        "full_product_name": {
+          "product_id": "CSAFPID-908070603",
+          "name": "Cisco AnyConnect Secure Mobility Client 2.3.185 installed on Microsoft Windows"
+        }
+      }
+    ]
+  }
+```
+
+> The product Cisco AnyConnect Secure Mobility Client 4.9.04053" (Product ID:
+> CSAFPID-908070601) and the product Microsoft Windows (Product ID:
+> CSAFPID-908070602) form together a new product with the separate Product ID
+> CSAFPID-908070603. The latter one can be used to refer to that combination in
+> other parts of the CSAF document. In example 34, it might be the case that
+> Cisco AnyConnect Secure Mobility Client 4.9.04053" is only vulnerable when
+> installed on Microsoft Windows.
+
+[source](https://docs.oasis-open.org/csaf/csaf/v2.0/os/csaf-v2.0-os.html#3224-product-tree-property---relationships)
+
+
+So let's find an example relationship from Red Hat CSAF JSON and try to
+write an analogous paragraph:
+
+``` json
+      {
+        "category": "default_component_of",
+        "full_product_name": {
+          "name": "mod_ssl-debuginfo-1:2.4.53-7.el9.ppc64le as a component of Red Hat Enterprise Linux AppStream (v. 9)",
+          "product_id": "AppStream-9.1.0.GA:mod_ssl-debuginfo-1:2.4.53-7.el9.ppc64le"
+        },
+        "product_reference": "mod_ssl-debuginfo-1:2.4.53-7.el9.ppc64le",
+        "relates_to_product_reference": "AppStream-9.1.0.GA"
+      },
+```
+
+A snippet of [this document](https://security.access.redhat.com/data/csaf/v2/vex/2022/cve-2022-23943.json)
+
+Regarding the `default_component_of` relationship, the spec helpfully says:
+
+> The value default_component_of indicates that the entity labeled with one
+> Product ID (e.g. CSAFPID-0001) is a default component of an entity with
+> another Product ID (e.g. CSAFPID-0002).
+
+This says:
+
+> There's a new "product" referred to within this CVE as
+> `AppStream-9.1.0.GA:mod_ssl-debuginfo-1:2.4.53-7.el9.ppc64le`,
+> which refers to `mod_ssl-debuginfo-1:2.4.53-7.el9.ppc64le` when
+> it is a default_component_of `AppStream-9.1.0.GA`
+
+Basically, when you see
+`AppStream-9.1.0.GA:mod_ssl-debuginfo-1:2.4.53-7.el9.ppc64le` in a product id
+field, like the list of "known_not_affected" or the list of threats or versions
+with vendor fixes, you know that it means the package
+`mod_ssl-debuginfo-1:2.4.53-7.el9.ppc64le` installed from AppStream-9, which I
+think in our terms means, we found it on a RHEL9 system.
