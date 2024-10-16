@@ -67,6 +67,8 @@ and I want to try to understand all the places:
 
 Let's try to enumerate what all these are:
 
+In vulnerabilities, there are a bunch of places product IDs appear:
+
 1. `vulnerabilities.*.threats.*.product_ids` - this is a list of product IDs by
    threat category. For example, it might say `category: impact; details:
    Moderate` meaning the product IDs in the list face a threat of moderate
@@ -83,5 +85,98 @@ Let's try to enumerate what all these are:
 4. `vulnerabilities.*.product_status.*.<status>` where status is "fixed" or
    "known_affected" or "known_not_affected". (there are also "first_affected"
    and some others, but Red Hat CSAF doesn't seem to use all of them.)
-   
+5. `vulnerabilities.*.flags.*.<label>` where you can write down product
+   information from the following enum variables: component_not_present,
+   inline_mitigations_already_exist,
+   vulnerable_code_cannot_be_controlled_by_adversary,
+   vulnerable_code_not_in_execute_path, vulnerable_code_not_present. Red Hat
+   seems to use `component_not_present`, `vulnerable_code_not_present`
+
+In sum, product IDs appear in 5 places in the CSAF VEX JSON: threats, scores,
+remediations, product_status, and flags:
+
+## Interpreting product related fields
+
+1. _threats_ tell us impact, e.g. "important" and "exploit_status", which
+   sometimes has a link to KEV like
+   https://www.cisa.gov/known-exploited-vulnerabilities-catalog and a date.
+
+We only see two categories:
+
+``` sh
+❯ zstdcat *.tar.zst | tar -Oxf - | jq -c -r 'select(.vulnerabilities != null) | .vulnerabilities[] | select(.threats != null) | .threats[] | .category' | sort | uniq -c | sort -nr
+66029 impact
+ 954 exploit_status
+```
+
+``` sh
+❯ zstdcat *.tar.zst | tar -Oxf - | jq -c -r 'select(.vulnerabilities != null) | .vulnerabilities[] | select(.threats != null) | .threats[] | .details' | sort | uniq -c | sort -nr
+33518 Moderate
+17845 Important
+9490 Low
+5176 Critical
+ 954 CISA: https://www.cisa.gov/known-exploited-vulnerabilities-catalog
+```
+
+When there's a KEV link it seems to be accompanied by a date.
+
+2. _scores_ tell us CVSS scores for different product IDs.
+``` json 
+      "scores": [
+        {
+          "cvss_v3": {
+            ... snip ...
+          },
+          "products": [
+            ... snip ...
+          ]
+        }
+      ]
+```
+
+There is always exactly 1 score in observed data so far, though the spec is
+silent on this point:
+
+``` sh
+❯ zstdcat *.tar.zst | tar -Oxf - | jq -c -r 'select(.vulnerabilities != null) | .vulnerabilities[] | select(.scores != null) | .scores | length' | sort | uniq -c | sort -nr
+61642 1
+```
+
+This means that the cvss_v3 score is applicable to all the products in
+`products`
+
+3. _remediations_ tell us what remedy is available. There are only 2 used
+in the Red Hat dataset:
+
+``` sh
+
+❯ zstdcat *.tar.zst | tar -Oxf - | jq -c -r 'select(.vulnerabilities != null) | .vulnerabilities[] | select(.threats != null) | .remediations[] | .category' | sort | uniq -c | sort -nr
+66029 vendor_fix
+12843 workaround
+```
+4. *product_status* gives us information about the status. It has sub objects
+   whose key tells us about the product status. Red Hat only uses two: fixed,
+   and known_not_affected:
+
+``` sh
+❯ zstdcat *.tar.zst | tar -Oxf - | jq -c -r 'select(.vulnerabilities != null) | .vulnerabilities[] | select(.product_status != null) | .product_status | keys' | sort | uniq -c | sort -n
+6593 ["fixed","known_not_affected"]
+59612 ["fixed"]
+```
+
+5. *flags* gives us additional information, such as for which product IDs the vulnerable
+code is not present. We have 2 labels in use here:
+
+``` sh
+❯ zstdcat *.tar.zst | tar -Oxf - | jq -c -r 'select(.vulnerabilities != null) | .vulnerabilities[] | select(.flags != null) | .flags[] | .label' | sort | uniq -c | sort -n
+ 179 component_not_present
+6414 vulnerable_code_not_present
+```
+
+## Algorithm
+
+What I really want out of all this research is a procedure for getting to a
+clean, accurate, simple view of the vulnerability and it's affected packages
+based on digging through the CSAF_VEX JSONs and maybe (though I hope I only
+need the vex) the CSAF Advisory JSONs if necessary.
 
