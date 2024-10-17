@@ -372,3 +372,198 @@ field, like the list of "known_not_affected" or the list of threats or versions
 with vendor fixes, you know that it means the package
 `mod_ssl-debuginfo-1:2.4.53-7.el9.ppc64le` installed from AppStream-9, which I
 think in our terms means, we found it on a RHEL9 system.
+
+So what I want to understand is this: how do the trees relate?
+
+The `product_reference` items from relationships can be leaves in the
+`branches` tree from the product tree. Example:
+
+``` json
+  "product_tree": {
+    "branches": [
+            "branches": [
+              {
+                "category": "product_version",
+                "name": "openstack-nova-1:20.4.1-1.20221005193235.el8ost.src",
+                "product": {
+                  "name": "openstack-nova-1:20.4.1-1.20221005193235.el8ost.src",
+                  "product_id": "openstack-nova-1:20.4.1-1.20221005193235.el8ost.src",
+                  "product_identification_helper": {
+                    "purl": "pkg:rpm/redhat/openstack-nova@20.4.1-1.20221005193235.el8ost?arch=src&epoch=1"
+                  }
+                }
+              },
+              ... snip ...
+            "branches": [
+              {
+                "category": "product_name",
+                "name": "Red Hat OpenStack Platform 16.1",
+                "product": {
+                  "name": "Red Hat OpenStack Platform 16.1",
+                  "product_id": "8Base-RHOS-16.1",
+                  "product_identification_helper": {
+                    "cpe": "cpe:/a:redhat:openstack:16.1::el8"
+                  }
+                }
+... snip ...
+      {
+        "category": "default_component_of",
+        "full_product_name": {
+          "name": "openstack-nova-1:20.4.1-1.20221005193235.el8ost.src as a component of Red Hat OpenStack Platform 16.1",
+          "product_id": "8Base-RHOS-16.1:openstack-nova-1:20.4.1-1.20221005193235.el8ost.src"
+        },
+        "product_reference": "openstack-nova-1:20.4.1-1.20221005193235.el8ost.src",
+        "relates_to_product_reference": "8Base-RHOS-16.1"
+      },
+... snip ...
+    "vulnerabilities": [
+     {
+      "product_status": {
+        "fixed": [
+          "8Base-RHOS-16.1:openstack-nova-1:20.4.1-1.20221005193235.el8ost.noarch",
+          "8Base-RHOS-16.1:openstack-nova-1:20.4.1-1.20221005193235.el8ost.src",
+          ... snip ...
+        ],
+     "known_not_affected": [
+          "red_hat_openstack_platform_18.0:openstack-nova"
+        ]
+
+```
+
+So this is telling me that, a vulnerability matcher should consider:
+
+1. If we're on RedHat OpenStack 16.1
+2. We have installed openstack-nova less than 1:20.4.1
+3. Then the package is vulnerable to CVE-2024-40767
+
+Also:
+
+1. If we're on RedHat Openstack 18, openstack-nova is not affected
+
+## But what about subsetting?
+
+One of the keys here is going to be making a reasonable set of packages.
+
+Consider this:
+
+``` sh
+❯ cat cve-2024-41946.json| jq '.vulnerabilities[0].product_status.fixed | length'
+335
+```
+
+That's really a lot. It doesn't seem like a human would think of there as being
+335 different packages affected by this CVE. Let's have a look.
+
+``` json
+{
+    "vulnerabilities":[
+      "product_status": {
+        "fixed": [
+          "AppStream-8.10.0.Z.MAIN.EUS:ruby:3.3:8100020240906074654:489197e6",
+          "AppStream-8.10.0.Z.MAIN.EUS:ruby:3.3:8100020240906074654:489197e6:ruby-0:3.3.5-3.module+el8.10.0+22271+6a48b0b9.aarch64",
+            ... snip ... - more architectures
+          "AppStream-8.10.0.Z.MAIN.EUS:ruby:3.3:8100020240906074654:489197e6:ruby-bundled-gems-0:3.3.5-3.module+el8.10.0+22271+6a48b0b9.aarch64",
+            ... snip ... - more architectures
+          "AppStream-8.10.0.Z.MAIN.EUS:ruby:3.3:8100020240906074654:489197e6:ruby-bundled-gems-debuginfo-0:3.3.5-3.module+el8.10.0+22271+6a48b0b9.aarch64",
+            ... snip ... - more architectures
+          "AppStream-8.10.0.Z.MAIN.EUS:ruby:3.3:8100020240906074654:489197e6:ruby-debuginfo-0:3.3.5-3.module+el8.10.0+22271+6a48b0b9.aarch64",
+            ... snip ... - more architectures
+          "AppStream-8.10.0.Z.MAIN.EUS:ruby:3.3:8100020240906074654:489197e6:ruby-debugsource-0:3.3.5-3.module+el8.10.0+22271+6a48b0b9.aarch64",
+            ... snip ... - more architectures
+          "AppStream-8.10.0.Z.MAIN.EUS:ruby:3.3:8100020240906074654:489197e6:ruby-devel-0:3.3.5-3.module+el8.10.0+22271+6a48b0b9.aarch64",
+            ... snip ... - more architectures
+          "AppStream-8.10.0.Z.MAIN.EUS:ruby:3.3:8100020240906074654:489197e6:ruby-doc-0:3.3.5-3.module+el8.10.0+22271+6a48b0b9.noarch",
+            ... snip ... - more debuginfo, debugsource, etc.
+          "AppStream-8.10.0.Z.MAIN.EUS:ruby:3.3:8100020240906074654:489197e6:rubygem-irb-0:1.13.1-3.module+el8.10.0+22271+6a48b0b9.noarch",
+            ... snip ... - more architectures
+            ... snip ... - more gems
+          "AppStream-9.4.0.Z.MAIN.EUS:ruby:3.3:9040020240906110954:9:rubygem-bigdecimal-0:3.1.5-3.module+el9.4.0+22273+463af10f.x86_64",
+          ],
+        "known_affected": [
+          "red_hat_enterprise_linux_8:ruby:2.5/ruby",
+          "red_hat_enterprise_linux_8:ruby:3.1/ruby",
+          "red_hat_enterprise_linux_9:pcs",
+          "red_hat_enterprise_linux_9:ruby:3.0/ruby",
+          "red_hat_enterprise_linux_9:ruby:3.1/ruby",
+          "red_hat_openstack_platform_16.1:puppet-datacat",
+          "red_hat_openstack_platform_16.1:puppet-etcd",
+          "red_hat_openstack_platform_16.1:puppet-opendaylight",
+          "red_hat_satellite_6:foreman",
+          "red_hat_satellite_6:foreman-proxy"
+        ],
+        "known_not_affected": [
+          "red_hat_openstack_platform_16.2:puppet-datacat",
+          "red_hat_openstack_platform_16.2:puppet-etcd",
+          "red_hat_openstack_platform_16.2:puppet-opendaylight",
+          "red_hat_openstack_platform_17.1:puppet-etcd"
+        ]
+      }    
+    ]
+```
+
+The description says:
+
+> A flaw was found in the REXML package. Reading an XML file that contains many
+> entity expansions may lead to a denial of service due to resource starvation.
+> An attacker can use this flaw to trick a user into processing an untrusted
+> XML file.
+
+It seems like there are a few things, in human readable terms, that are vulnerable here:
+
+1. Ruby itself
+2. The RPM "ruby-bundled-gems"
+3. Many specific ruby gems
+
+But there's a lot of multiplication, because this set of vulnerabilities is multiplied by:
+
+* N for the N bundled gems
+* A for the A architectures
+* V for the V variants of what are sort of the same package (ruby vs ruby-devel, for example)
+* D for the D distros / AppStreams that are affected.
+
+The "known_affected" list is honestly much more human readable. It says things
+like "ruby 2.5 for RHEL8 is known to be vulnerable" which is a super easy thing
+to understand. So why the craziness in fixed?
+
+``` sh 
+# fixed avg length
+❯ zstdcat csaf_vex_2024-10-06.tar.zst| tar -Oxf - | jq -c -r 'select(.vulnerabilities != null) | .vulnerabilities[] | select(.product_status.fixed != null) | .product_status.fixed | length' |
+ awk '{ sum += $1; count += 1 } END { if (count > 0) print sum / count }'
+413.231
+
+# known_not_affected avg length
+csaf on  main [!?] is 📦 v0.1.0 via 🐍 v3.11.8 (csaf) took 1m45s 
+❯ zstdcat csaf_vex_2024-10-06.tar.zst| tar -Oxf - | jq -c -r 'select(.vulnerabilities != null) | .vulnerabilities[] | select(.product_status.known_not_affected != null) | .product_status.know
+n_not_affected | length' | awk '{ sum += $1; count += 1 } END { if (count > 0) print sum / count }'
+65.5004
+
+# known_affected avg length
+❯ zstdcat csaf_vex_2024-10-06.tar.zst| tar -Oxf - | jq -c -r 'select(.vulnerabilities != null) | .vulnerabilities[] | select(.product_status.known_affected != null) | .product_status.known_af
+fected | length' | awk '{ sum += $1; count += 1 } END { if (count > 0) print sum / count }' 
+3.89124
+```
+
+That's itneresting - fixed is ~100x longer than `known_affected` and ~7x longer
+than `known_not_affected`.
+
+I have a thought here though:
+
+### It's for patching
+
+The reason there are tons more `fixed` products than any other kind, and that
+the fixed products all look crazy, is that someone needs to know where to get a
+patch. So when we right down, "Ruby 2.5 for RHEL 7 is affected and won't be
+fixed", we need one product, but when we right don't that a patch was issued,
+suddenly we need to list every RPM that the new patch was built into, which 
+necessitates literally hundreds of changes. Because if the change was to something
+like `libxml` or whatever, then suddenly you need every ruby gem whose native
+extensions link to libxml, and their debug symbol variants, for every architecture
+because native extensions. That's why there's 415 fixed RPMs, 65 "not affected"
+RPMs, and 4 "wont fix" RPMs.
+
+## What about inferring "wont fix"?
+
+I _think_ we can just say, "known_affected". Actually, is "known_affected"
+"not-fixed" or "wont-fix"? That's an important question and I don't know yet.
+
+
