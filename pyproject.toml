@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "csaf>=2023.11.27",
+    "dataclasses-json>=0.6.7",
     "jmespath>=1.0.1",
     "packageurl-python>=0.15.6",
     "zstandard>=0.23.0",
