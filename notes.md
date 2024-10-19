@@ -733,8 +733,160 @@ But in our CVE JSON doc, ruby:3.3. is not listed as a logical product.
 It looks like we need to dig one row deeper than the logical elements code
 above and look at the `noarch` block.
 
+### Reviting logical products, adding `noarch`
 
+Changed the code to be like this:
 
+``` python
+def logical_products(self) -> list[Product]:
+    vendor_branch = self.branches[0]
+    top_level_products = [
+        b.product
+        for b in vendor_branch.branches
+        if b.category == "product_version" and b.product
+    ]
+    noarch_branches = [
+        b
+        for b in self.branches[0].branches
+        if b.category == "architecture" and b.name == "noarch"
+    ]
+    noarch_products = [
+        b.product
+        for noarch_branch in noarch_branches
+        for b in noarch_branch.branches
+        if b.product
+    ]
+    return top_level_products + noarch_products
+```
+
+This results in a couple things:
+
+1. Dozens more products (but no longer missing ruby:3.3.)
+2. 2 instances of ruby:3.3: `ruby:3.3:8100020240906074654:489197e6` and
+   `ruby:3.3:9040020240906110954:9`
+
+I think this goes back to patching. The not fixed / out of support products
+have one logical product, like `ruby:2.5/ruby`, but once you start patching,
+there's a record for every RPM that got rebuilt, so you get super helpful
+logical products like
+`rubygem-bundler-0:2.5.16-3.module+el8.10.0+22271+6a48b0b9.noarch`
+
+I mean, fair enough, that RPM got rebuilt and if you did `yum install
+rubygem-bundler` you should update it.
+
+In summary, **so far**:
+
+1. I have found 2 procuedures for logical products: products that are direct
+   descendants of the vendor, and products that are direct descendants of the
+   vendor or the `noarch` architecture category. Call these a and b.
+2. Method a is about what you get in the UI, but missing patched versions.
+3. Method b isn't missing anything, but includes so many product IDs it's hard
+   to reason about.
+
+My next question is this:
+
+What's the difference between `ruby:3.3:8100020240906074654:489197e6` and
+`ruby:3.3:9040020240906110954:9` Are tehse just build numbers?
+
+* `ruby:3.3:8100020240906074654:489197e6` is a default_component_of AppStream 8.
+* `ruby:3.3:9040020240906110954:9` is a default_component_of AppStream 9.
+
+What about their siblings in the noarch sub-tree, for example
+`rubygems-0:3.5.16-3.module+el8.10.0+22271+6a48b0b9.noarch`. What makes them
+different from other products and from the ones that are like above, like
+`ruby:3.3.:9...`
+
+* The product identification helper is an rpm, not an rpm mod
+  `pkg:rpmmod/redhat/ruby@3.3:9040020240906110954:9` on
+  `ruby:3.3:9040020240906110954:9` vs
+  `pkg:rpm/redhat/rubygems@3.5.16-3.module%2Bel8.10.0%2B22271%2B6a48b0b9?arch=noarch`
+  on `rubygems-0:3.5.16-3.module+el8.10.0+22271+6a48b0b9.noarch`
+* I think `rpmmod` is an unspecified purl type:
+  https://github.com/package-url/purl-spec/blob/master/PURL-TYPES.rst?plain=1#L529
+* Maybe when something is a module, it's its own product? Let's try a draft of
+  product ids that way
+
+This gives us:
+
+* foreman
+* foreman-proxy
+* pcs
+* puppet-datacat
+* puppet-etcd
+* puppet-opendaylight
+* ruby:2.5/ruby
+* ruby:3.0/ruby
+* ruby:3.1/ruby
+* ruby:3.3:8100020240906074654:489197e6
+* ruby:3.3:9040020240906110954:9
+
+Which lines up reasonably well with the website:
+
+``` sh
+echo '<the table from above>' |
+    awk -F '|' '{print $2}' | awk '{print $1}' | sort | uniq | awk '{print "* " $1}'
+* foreman
+* foreman-proxy
+* pcs
+* puppet-datacat
+* puppet-etcd
+* puppet-opendaylight
+* ruby:2.5/ruby
+* ruby:3.0/ruby
+* ruby:3.1/ruby
+* ruby:3.3
+```
+And the table does have 2 Ruby 3.3 entries, one for RHEL8 and one for RHEL9.
+
+## Better procedure for "logical products":
+
+(here `self` is a `ProductTree` instance from `types.py` in this repo)
+
+``` python
+def logical_products(self) -> list[Product]:
+    vendor_branch = self.branches[0]
+    top_level_products = [
+        b.product
+        for b in vendor_branch.branches
+        if b.category == "product_version" and b.product
+    ]
+    noarch_branches = [
+        b
+        for b in self.branches[0].branches
+        if b.category == "architecture" and b.name == "noarch"
+    ]
+    noarch_products = [
+        b.product
+        for noarch_branch in noarch_branches
+        for b in noarch_branch.branches
+        if b.product
+        and b.product.product_identification_helper
+        and b.product.product_identification_helper.purl
+        and "rpmmod" in b.product.product_identification_helper.purl
+    ]
+    return top_level_products + noarch_products
+```
+
+In pseudo-code / human readable logic:
+
+1. The top-level branch is always `vendor: Red Hat`, so take that as the root
+2. In the immediate children of the `vendor: Red Hat` branch, any `product`
+   type node is a logical product (here a `product` type note is a node with
+   `product` set and empty/nil `branches`)
+3. In the immediate children of the `vendor: Red Hat` branch, there are N
+   branches with `category: architecture, name: noarch`. This is the noarch
+   section.
+4. In the noarch section, there are products that have PURL type `rpm` and
+   products that have purl type `rpmmod`. The ones that have `rpm` are very
+   granular, but we should grab the oneswith type `rpmmod`
+
+Let's spot check a few more CVEs, then write a test script to check whether
+this is true generally or just coincidentally true for the CVE I've considered
+here.
+
+The first step to spot checking is to take a look at the JSON that drives the
+web UI and see if I can make an easier path to validation than just looking at
+that table.
 
 ## What about inferring "wont fix"?
 

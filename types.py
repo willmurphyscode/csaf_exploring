@@ -304,11 +304,26 @@ class ProductTree:
 
     def logical_products(self) -> list[Product]:
         vendor_branch = self.branches[0]
-        return [
+        top_level_products = [
             b.product
             for b in vendor_branch.branches
             if b.category == "product_version" and b.product
         ]
+        noarch_branches = [
+            b
+            for b in self.branches[0].branches
+            if b.category == "architecture" and b.name == "noarch"
+        ]
+        noarch_products = [
+            b.product
+            for noarch_branch in noarch_branches
+            for b in noarch_branch.branches
+            if b.product
+            and b.product.product_identification_helper
+            and b.product.product_identification_helper.purl
+            and "rpmmod" in b.product.product_identification_helper.purl
+        ]
+        return top_level_products + noarch_products
 
     def has_ancestor(self, product_id: str, maybe_ancestor_id: str) -> bool:
         parent = self.parent(product_id)
