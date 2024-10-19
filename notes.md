@@ -888,6 +888,120 @@ The first step to spot checking is to take a look at the JSON that drives the
 web UI and see if I can make an easier path to validation than just looking at
 that table.
 
+Let's consider CVE-2024-41946 first, since I already hand made a list of logical
+products for the web UI, we can use it to validate our JSON parsing.
+
+``` json
+❯ cat legacy-cve-2024-41946.json| jq -c '.package_state | sort_by(.package_name) | .[] | {package : .package_name, cpe: .cpe, fix_state: .fix_state}'
+{"package":"foreman","cpe":"cpe:/a:redhat:satellite:6","fix_state":"Will not fix"}
+{"package":"foreman-proxy","cpe":"cpe:/a:redhat:satellite:6","fix_state":"Will not fix"}
+{"package":"pcs","cpe":"cpe:/o:redhat:enterprise_linux:9","fix_state":"Affected"}
+{"package":"puppet-datacat","cpe":"cpe:/a:redhat:openstack:16.1","fix_state":"Will not fix"}
+{"package":"puppet-datacat","cpe":"cpe:/a:redhat:openstack:16.2","fix_state":"Not affected"}
+{"package":"puppet-etcd","cpe":"cpe:/a:redhat:openstack:16.1","fix_state":"Will not fix"}
+{"package":"puppet-etcd","cpe":"cpe:/a:redhat:openstack:16.2","fix_state":"Not affected"}
+{"package":"puppet-etcd","cpe":"cpe:/a:redhat:openstack:17.1","fix_state":"Not affected"}
+{"package":"puppet-opendaylight","cpe":"cpe:/a:redhat:openstack:16.1","fix_state":"Out of support scope"}
+{"package":"puppet-opendaylight","cpe":"cpe:/a:redhat:openstack:16.2","fix_state":"Not affected"}
+{"package":"ruby:2.5/ruby","cpe":"cpe:/o:redhat:enterprise_linux:8","fix_state":"Will not fix"}
+{"package":"ruby:3.0/ruby","cpe":"cpe:/o:redhat:enterprise_linux:9","fix_state":"Affected"}
+{"package":"ruby:3.1/ruby","cpe":"cpe:/o:redhat:enterprise_linux:8","fix_state":"Affected"}
+{"package":"ruby:3.1/ruby","cpe":"cpe:/o:redhat:enterprise_linux:9","fix_state":"Affected"}
+```
+
+versus from the procedure above:
+
+```
+trying for real products
+* foreman
+* foreman-proxy
+* pcs
+* puppet-datacat
+* puppet-etcd
+* puppet-opendaylight
+* ruby:2.5/ruby
+* ruby:3.0/ruby
+* ruby:3.1/ruby
+* ruby:3.3:8100020240906074654:489197e6
+* ruby:3.3:9040020240906110954:9
+```
+
+So that method is missing ruby 3.3. But if we combine it with this:
+
+``` sh
+❯ cat legacy-cve-2024-41946.json| jq -c '.affected_release | sort_by(.package) | .[] | {package : .package, cpe: .cpe }'                      
+{"package":"pcs-0:0.10.12-6.el8_6.6","cpe":"cpe:/a:redhat:rhel_tus:8.6::highavailability"}
+{"package":"pcs-0:0.10.12-6.el8_6.6","cpe":"cpe:/a:redhat:rhel_e4s:8.6::highavailability"}
+{"package":"pcs-0:0.10.15-4.el8_8.3","cpe":"cpe:/a:redhat:rhel_eus:8.8::highavailability"}
+{"package":"pcs-0:0.10.18-2.el8_10.2","cpe":"cpe:/a:redhat:enterprise_linux:8::highavailability"}
+{"package":"ruby:3.3-8100020240906074654.489197e6","cpe":"cpe:/a:redhat:enterprise_linux:8"}
+{"package":"ruby:3.3-9040020240906110954.9","cpe":"cpe:/a:redhat:enterprise_linux:9"}
+```
+
+``` sh
+❯ cat legacy-cve-2024-41946.json| jq -r '[.affected_release[].package, .package_state[].package_name] | flatten | sort | unique | .[]'
+foreman
+foreman-proxy
+pcs
+pcs-0:0.10.12-6.el8_6.6
+pcs-0:0.10.15-4.el8_8.3
+pcs-0:0.10.18-2.el8_10.2
+puppet-datacat
+puppet-etcd
+puppet-opendaylight
+ruby:2.5/ruby
+ruby:3.0/ruby
+ruby:3.1/ruby
+ruby:3.3-8100020240906074654.489197e6
+ruby:3.3-9040020240906110954.9
+```
+
+This is the same list as the `logical_products` code above, aside from a couple of
+differences like having 4 entries for `pcs`.
+
+So this gives us a procedure for comparison:
+
+1. For a given CVE entry, fetch the legacy JSON and get the union of the set of
+   package names in `.package_stage` and `.package`s off `.affected_release`
+2. Get the CSAF VEX JSON, and compute the logical packages set based on the
+   code above.
+
+Start your engines! here's the random CVEs:
+
+``` sh
+❯ zstdcat csaf_vex_2024-10-06.tar.zst| tar -tf - | shuf | head -n 10
+2012/cve-2012-5496.json
+2019/cve-2019-14812.json
+2021/cve-2021-20257.json
+2017/cve-2017-9670.json
+2017/cve-2017-9375.json
+2015/cve-2015-5580.json
+2021/cve-2021-3684.json
+2014/cve-2014-0393.json
+2011/cve-2011-4415.json
+2016/cve-2016-9627.json
+```
+
+Ok, now that I have a script to compare differences between these methods:
+
+``` sh
+❯ echo '2013/cve-2013-3337.json' | uv run hypo2.py 
+differences for file 2013/cve-2013-3337.json
+
+legacy only:
+* acroread-0:9.5.5-1.el5_9
+* acroread-0:9.5.5-1.el6_4
+vex only:
+```
+
+This seems simialr to the `pcs` difference above, where the legacy system has
+an RPM version string on the end of the product name. I'll re-run with a larger
+sample to see if this holds, but first a `git push` in case my laptop decides
+to die.
+
+
+I think this should be package state
+
 ## What about inferring "wont fix"?
 
 I _think_ we can just say, "known_affected". Actually, is "known_affected"

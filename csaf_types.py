@@ -95,16 +95,16 @@ class Score:
 class Vulnerability:
     title: str
     cve: str
-    cwe: str
-    discovery_date: str
-    flags: list[Flag]
-    ids: list[VulnID]
-    notes: list[Note]
-    product_status: ProductStatus
-    references: list[Reference]
-    release_date: str
-    remediations: list[Remediation]
-    threats: list[Threat]
+    cwe: str | None = None
+    discovery_date: str | None = None
+    flags: list[Flag] = field(default_factory=list)
+    ids: list[VulnID] = field(default_factory=list)
+    notes: list[Note] = field(default_factory=list)
+    product_status: ProductStatus | None = None
+    references: list[Reference] | None = None
+    release_date: str | None = None
+    remediations: list[Remediation] = field(default_factory=list)
+    threats: list[Threat] = field(default_factory=list)
 
 
 @dataclass_json
