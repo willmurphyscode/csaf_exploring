@@ -1,6 +1,7 @@
 import json
 import requests
 import os
+import re
 import sys
 import tarfile
 import zstandard as zstd
@@ -10,6 +11,13 @@ LEGACY_DIR = "legacy_jsons"
 LEGACY_API_TEMPLATE = "https://access.redhat.com/hydra/rest/securitydata/cve/ID.json"
 CSAF_DIR = "csaf_vex_jsons"
 CSAF_VEX_ARCHIVE = "csaf_vex_2024-10-06.tar.zst"
+
+
+def remove_rpm_version(package_string: str) -> str:
+    # Regex pattern to match the version suffix, e.g. '-0:1.36.2.4-1.el6op'
+    pattern = r"-\d+:[\d\.]+-\d+\.\w+"
+    # Substitute the matching pattern with an empty string
+    return re.sub(pattern, "", package_string)
 
 
 def download_file(url, path):
@@ -29,10 +37,11 @@ def get_legacy_products(up_id: str) -> set[str]:
 
     with open(path, "r") as file:
         data = json.load(file)
-        return set(
+        results = set(
             [item["package"] for item in data.get("affected_release", [])]
             + [item["package_name"] for item in data.get("package_state", [])]
         )
+        return {remove_rpm_version(item) for item in results}
 
 
 def unzip_from_vex_archive(id: str, year: str):
@@ -76,10 +85,13 @@ def process_line(line: str):
         return
 
     print(f"differences for file {line}")
-    print("legacy only:")
+    if legacy_only:
+        print("legacy only:")
     for p in sorted(list(legacy_only)):
         print(f"* {p}")
-    print("vex only:")
+
+    if vex_only:
+        print("vex only:")
     for p in sorted(list(vex_only)):
         print(f"* {p}")
 

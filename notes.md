@@ -999,6 +999,63 @@ an RPM version string on the end of the product name. I'll re-run with a larger
 sample to see if this holds, but first a `git push` in case my laptop decides
 to die.
 
+``` sh
+Yay! no diff for 2024/cve-2024-26831.json
+Yay! no diff for 2014/cve-2014-9087.json
+Yay! no diff for 2014/cve-2014-0462.json
+Yay! no diff for 2016/cve-2016-8688.json
+
+differences for file 2022/cve-2022-21270.json
+
+legacy only:
+* mysql:8.0-8060020220830124159.ad008a3a
+* rh-mysql80-mysql-0:8.0.30-1.el7
+vex only:
+* mysql:8.0:8060020220830124159:ad008a3a
+```
+
+This also looks like differences in how version strings are formatted. Again!
+
+Having run on much larger sample sizes, I've learned a few things:
+
+1. I need to trim the RPM version differences to correctly see how many other
+   differences there are.
+2. There are a few entries for which there's no
+   `product_identification_helper`.
+
+``` sh
+❯ zstdcat csaf_vex_2024-10-06.tar.zst| tar -tf - | shuf | head -n 10 | uv run hypo2.py
+Yay! no diff for 2015/cve-2015-8949.json
+
+differences for file 2017/cve-2017-5060.json
+legacy only:
+* chromium-browser
+
+differences for file 2013/cve-2013-1796.json
+legacy only:
+* kernel.1.el6
+* kvm.3
+* rhev-hypervisor6.el6_4
+
+Yay! no diff for 2016/cve-2016-5040.json
+Yay! no diff for 2017/cve-2017-18210.json
+
+differences for file 2023/cve-2023-1579.json
+legacy only:
+* mingw-binutils
+
+differences for file 2021/cve-2021-28662.json
+legacy only:
+* squid:4-8050020210618131503.b4937e53
+vex only:
+* squid:4:8050020210618131503:b4937e53
+
+Yay! no diff for 2011/cve-2011-3148.json
+Yay! no diff for 2017/cve-2017-14174.json
+Yay! no diff for 2017/cve-2017-12182.json
+```
+
+This looks pretty good. It give me a couple things to look into.
 
 I think this should be package state
 
