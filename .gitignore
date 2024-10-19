@@ -1,2 +1,5 @@
 __pycache__/*
 *.tar.zst
+csaf_vex_jsons
+legacy_jsons
+data
