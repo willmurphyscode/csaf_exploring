@@ -561,6 +561,181 @@ extensions link to libxml, and their debug symbol variants, for every architectu
 because native extensions. That's why there's 415 fixed RPMs, 65 "not affected"
 RPMs, and 4 "wont fix" RPMs.
 
+### Maybe maybe maybe
+
+I think that product relationships are rooted in the branches!
+
+For example, in CVE-2024-40767.json if you follow the relationships from
+`"9Base-RHOS-17.1:openstack-nova-1:23.2.3-17.1.20231018130829.el9ost.noarch"`
+back until you find the root of the relationships tree, you find
+`"9Base-RHOS-17.1"`, but then if you search for `"product_id":
+"9Base-RHOS-17.1"`, you find a position in the `branches`, but _don't_ find a
+position in the `relationships`.
+
+
+So I think a namespace operation is, basically:
+
+1. Start with the product ID where you're interested, e.g. an entry in
+   `vulnerabilities[0].product_status.fixed`
+2. Find a relationship where that product id is the
+   `full_product_name.productid` and get the `relates_to_product_reference`
+   string
+3. Find the path from the root branch (the `Vendor: Red Hat` branch) in the
+   product_tree.branches to a branch where `product.product_id` is the string
+   from step 2
+
+The path from the root to the node in step 3 is the product lineage, in this case:
+
+1. Red Hat vendor
+2. Red Hat open stack platform
+3. Red Hat OpenStack Platform 17.1
+
+
+The `relationships` has depth 3 sometimes:
+
+```
+AppStream-8.10.0.Z.MAIN.EUS
+  AppStream-8.10.0.Z.MAIN.EUS:ruby:3.3:8100020240906074654:489197e6
+    AppStream-8.10.0.Z.MAIN.EUS:ruby:3.3:8100020240906074654:489197e6:ruby-0:3.3.5-3.module+el8.10.0+22271+6a48b0b9.aarch64
+```
+
+I read this as, basically, "AppStream for RHEL8 has a product called ruby, and
+ruby has an rpm module that can be installed on aarch64"
+
+### PURLs?
+
+Can I just check whith elements in branches have a PURL set?
+
+
+### Wait really?
+
+Can I just use `product_tree.branches[0].filter(b => b.is_a_product())` to get the
+list of logical products?
+
+Yes! Success. List of logical products. Doing some tests here:
+
+For cve-2024-41946, logical products by this code:
+* foreman
+* foreman-proxy
+* pcs
+* puppet-datacat
+* puppet-etcd
+* puppet-opendaylight
+* ruby:2.5/ruby
+* ruby:3.0/ruby
+* ruby:3.1/ruby
+
+Visiting the actual website to see what products are there:
+
+Product / Service | component | state | errata
+------------------|-----------|-------|-------
+Red Hat Enterprise Linux 8 | ruby:3.3 | Fixed | RHSA-2024:6784 
+Red Hat Enterprise Linux 8 | pcs | Fixed | RHSA-2024:6670
+Red Hat Enterprise Linux 8.6 Telecommunications Update Service | pcs | Fixed | RHSA-2024:6702
+Red Hat Enterprise Linux 8.6 Update Services for SAP Solutions | pcs | Fixed | RHSA-2024:6702 
+Red Hat Enterprise Linux 8.8 Extended Update Support |pcs | Fixed | RHSA-2024:6703 
+Red Hat Enterprise Linux 9 | ruby:3.3 | Fixed | RHSA-2024:6785
+Red Hat Enterprise Linux 8 | ruby:2.5/ruby | Will not fix | |
+Red Hat Enterprise Linux 8 | ruby:3.1/ruby | Affected | |
+Red Hat Enterprise Linux 9 | pcs Affected | | 
+Red Hat Enterprise Linux 9 | ruby:3.0/ruby | Affected | | 
+Red Hat Enterprise Linux 9 | ruby:3.1/ruby | Affected | |
+Red Hat OpenStack Platform 16.1 | puppet-datacat | Will not fix | |
+Red Hat OpenStack Platform 16.1 | puppet-etcd | Will not fix | |
+Red Hat OpenStack Platform 16.1 | puppet-opendaylight |Out of support scope | |
+Red Hat OpenStack Platform 16.2 | puppet-datacat | Not affected | |
+Red Hat OpenStack Platform 16.2 | puppet-etcd | Not affected | |
+Red Hat OpenStack Platform 16.2 | puppet-opendaylight | Not affected | |
+Red Hat OpenStack Platform 17.1 | puppet-etcd | Not affected | | 
+Red Hat Satellite 6 | foreman | Will not fix | |
+Red Hat Satellite 6 | foreman-proxy | Will not fix 
+
+Using some old JSON
+``` sh
+❯ cat legacy-cve-2024-41946.json| jq -r '.affected_release[] | .package'
+ruby:3.3-8100020240906074654.489197e6
+pcs-0:0.10.18-2.el8_10.2
+pcs-0:0.10.12-6.el8_6.6
+pcs-0:0.10.12-6.el8_6.6
+pcs-0:0.10.15-4.el8_8.3
+ruby:3.3-9040020240906110954.9
+```
+
+Grype database today:
+
+``` text
+❯ sqlite3 --header --column ~/Library/Caches/grype/db/5/vulnerability.db '
+select 
+    id, package_name, namespace, fix_state from vulnerability 
+where 
+    id = "CVE-2024-41946" and namespace like "%red%"
+order by 
+    namespace, package_name, fix_state;' 
+id              package_name  namespace               fix_state
+--------------  ------------  ----------------------  ---------
+CVE-2024-41946  pcs           redhat:distro:redhat:8  fixed    
+CVE-2024-41946  ruby          redhat:distro:redhat:8  fixed    
+CVE-2024-41946  ruby          redhat:distro:redhat:8  not-fixed
+CVE-2024-41946  ruby          redhat:distro:redhat:8  wont-fix 
+CVE-2024-41946  pcs           redhat:distro:redhat:9  not-fixed
+CVE-2024-41946  ruby          redhat:distro:redhat:9  fixed    
+CVE-2024-41946  ruby          redhat:distro:redhat:9  not-fixed
+CVE-2024-41946  ruby          redhat:distro:redhat:9  not-fixed
+```
+
+**Conclusions** It looks like, for this section, the method of taking all the
+product_version nodes that are direct descendants of the vendor branch creates
+a human-readable subset of packages, but that this subset is larger than what's
+in the grype-db today.
+
+## What about getting the state of these human readable products
+
+For cve-2024-41946, we can get a list of logical products like this:
+``` python
+c = load_from_json() # for example
+vendor_branch = c.product_tree.branches[0]
+for b in vendor_branch.branches:
+    if b.category == "product_version" and b.product:  # second check is redundant in compliant documents
+        print(b.product.product_id)
+```
+* foreman
+* foreman-proxy
+* pcs
+* puppet-datacat
+* puppet-etcd
+* puppet-opendaylight
+* ruby:2.5/ruby
+* ruby:3.0/ruby
+* ruby:3.1/ruby
+
+But we want to answer a question now, like: Is a fix available for Red Hat 8
+for CVE-2024-41946 for `ruby:3.1/ruby`?
+
+To do that:
+
+1. Look at `vulnerabilities[0]` (because we're in the doc about cve-2024-41946,
+   it will be the only vulnerability node)
+2. Take the `.product_status.fixed` array, for each product
+3. If it's a descendant of both a RHEL8 node or an AppStream 8 node, **via** a
+   `ruby:3.1/ruby` node, then it implies a fixed version for that logical
+   package is available for that distro version.
+
+
+Let's try it out!
+
+We're missing something:
+
+Consider https://access.redhat.com/security/cve/CVE-2024-41946 for RHEL8:
+* ruby:3.3 is considered fixed
+
+But in our CVE JSON doc, ruby:3.3. is not listed as a logical product.
+
+It looks like we need to dig one row deeper than the logical elements code
+above and look at the `noarch` block.
+
+
+
+
 ## What about inferring "wont fix"?
 
 I _think_ we can just say, "known_affected". Actually, is "known_affected"
