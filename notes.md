@@ -1057,11 +1057,53 @@ Yay! no diff for 2017/cve-2017-12182.json
 
 This looks pretty good. It give me a couple things to look into.
 
-I think this should be package state
 
-## What about inferring "wont fix"?
+``` sh
+csaf on  main [!?] is 📦 v0.1.0 via 🐍 v3.11.8 (csaf) took 5s 
+❯ zstdcat csaf_vex_2024-10-06.tar.zst| tar -tf - | shuf | head -n 1 | uv run hypo2.py
+Differences for file 2008/cve-2008-3863.json
 
-I _think_ we can just say, "known_affected". Actually, is "known_affected"
-"not-fixed" or "wont-fix"? That's an important question and I don't know yet.
+Legacy only:
+* enscript (closest in vex: None)
+* enscript.1 (closest in vex: None)
+* enscript.1.el5_2 (closest in vex: None)
+
+csaf on  main [!?] is 📦 v0.1.0 via 🐍 v3.11.8 (csaf) took 5s 
+```
+
+The above example is an import ⬆ one, because it's a place where `hypo2.py`
+misses a product name that the old method finds.
+
+Even adding this:
+
+``` py
+
+    if b.category == "architecture" and (b.name == "noarch" or b.name == "src")
+```
+
+So that we accept src or noarch products as logical products doesn't work.
+
+For now, I'm going to say that CVE is super old and see if those happen again.
 
 
+``` sh
+❯ echo 2021/cve-2021-3595.json | uv run hypo2.py 
+Differences for file 2021/cve-2021-3595.json
+
+Legacy only:
+* virt-devel:rhel-8050020211001230723.b4937e53 (closest in vex: virt-devel:rhel:8050020211001230723:b4937e53)
+* virt:rhel-8050020211001230723.b4937e53 (closest in vex: virt:rhel:8050020211001230723:b4937e53)
+Vex only:
+* virt-devel:rhel:8050020211001230723:b4937e53 (closest in legacy: virt-devel:rhel-8050020211001230723.b4937e53)
+* virt:rhel:8050020211001230723:b4937e53 (closest in legacy: virt:rhel-8050020211001230723.b4937e53)
+```
+
+There are 2 next steps here:
+
+1. 
+
+## Questions I still have
+
+1. How do I infer fix state? Probably the flags section?
+2. Does a correct view of packages based on the hydra APIs include
+   affected_release and package_state nodes?

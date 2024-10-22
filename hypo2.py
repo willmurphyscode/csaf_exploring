@@ -17,6 +17,16 @@ CSAF_DIR = "csaf_vex_jsons"
 CSAF_VEX_ARCHIVE = "csaf_vex_2024-10-06.tar.zst"
 
 
+def normalize_kernel_name(package_name: str) -> str:
+    # Regex to match and reduce kernel package names to their base
+    pattern = r"^kernel(?:-rt)?(?:[.:].*)?$"
+
+    # If the name matches the pattern, return just "kernel"
+    if re.match(pattern, package_name):
+        return "kernel"
+    return package_name
+
+
 def remove_rpm_version(package_string: str) -> str:
     # Regex pattern to match the version suffix, e.g. '-0:1.36.2.4-1.el6op'
     pattern = r"-\d+:[\d\.]+-\d+\.\w+"
@@ -32,6 +42,7 @@ def normalize_package_names_with_versions(package_name: str) -> str:
     might be used in versioning. It will reformat the package name to follow the vex format.
     """
     package_name = remove_rpm_version(package_name)
+    package_name = normalize_kernel_name(package_name)
     # Replace the first `-` (often between product and version) with a colon `:`
     # convert foo:rhel-8050020211001230723.b4937e53 to foo:rhel:8050020211001230723:b4937e53
     pattern = r"(rhel-)(\d{19})\.([a-f0-9]{8})$"
