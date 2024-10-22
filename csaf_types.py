@@ -312,7 +312,7 @@ class ProductTree:
         noarch_branches = [
             b
             for b in self.branches[0].branches
-            if b.category == "architecture" and b.name == "noarch"
+            if b.category == "architecture" and (b.name == "noarch" or b.name == "src")
         ]
         noarch_products = [
             b.product

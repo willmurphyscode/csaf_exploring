@@ -1,4 +1,5 @@
 import json
+from typing import Callable
 import requests
 import os
 import re
@@ -6,6 +7,9 @@ import sys
 import tarfile
 import zstandard as zstd
 from csaf_types import CSAF_JSON
+
+import jellyfish
+
 
 LEGACY_DIR = "legacy_jsons"
 LEGACY_API_TEMPLATE = "https://access.redhat.com/hydra/rest/securitydata/cve/ID.json"
@@ -18,6 +22,22 @@ def remove_rpm_version(package_string: str) -> str:
     pattern = r"-\d+:[\d\.]+-\d+\.\w+"
     # Substitute the matching pattern with an empty string
     return re.sub(pattern, "", package_string)
+
+
+def normalize_package_names_with_versions(package_name: str) -> str:
+    """
+    Normalizes package names to ensure consistent formatting between legacy and vex sets.
+
+    This function assumes that vex uses colons `:` instead of dashes `-` in some places, and dots `.`
+    might be used in versioning. It will reformat the package name to follow the vex format.
+    """
+    package_name = remove_rpm_version(package_name)
+    # Replace the first `-` (often between product and version) with a colon `:`
+    # convert foo:rhel-8050020211001230723.b4937e53 to foo:rhel:8050020211001230723:b4937e53
+    pattern = r"(rhel-)(\d{19})\.([a-f0-9]{8})$"
+
+    # Check if the string matches the pattern at the end
+    return re.sub(pattern, r"rhel:\2:\3", package_name)
 
 
 def download_file(url, path):
@@ -41,7 +61,7 @@ def get_legacy_products(up_id: str) -> set[str]:
             [item["package"] for item in data.get("affected_release", [])]
             + [item["package_name"] for item in data.get("package_state", [])]
         )
-        return {remove_rpm_version(item) for item in results}
+        return {normalize_package_names_with_versions(item) for item in results}
 
 
 def unzip_from_vex_archive(id: str, year: str):
@@ -72,7 +92,46 @@ def get_vex_logical_products(id: str, year: str) -> set[str]:
         return set([p.product_id for p in c.product_tree.logical_products()])
 
 
-def process_line(line: str):
+# Levenshtein distance as a more flexible alternative
+def levenshtein_distance(str1: str, str2: str) -> float:
+    if len(str1) < len(str2):
+        return levenshtein_distance(str2, str1)
+    if len(str2) == 0:
+        return len(str1)
+    previous_row = range(len(str2) + 1)
+    for i, c1 in enumerate(str1):
+        current_row = [i + 1]
+        for j, c2 in enumerate(str2):
+            insertions = previous_row[j + 1] + 1
+            deletions = current_row[j] + 1
+            substitutions = previous_row[j] + (c1 != c2)
+            current_row.append(min(insertions, deletions, substitutions))
+        previous_row = current_row
+    return previous_row[-1]
+
+
+# Jaro-Winkler distance function
+def jaro_winkler_distance(str1: str, str2: str) -> float:
+    return 1 - jellyfish.jaro_winkler_similarity(str1, str2)
+
+
+# Function to find the closest match
+def find_closest_match(
+    target: str, candidates: list[str], distance_func: Callable[[str, str], float]
+) -> str:
+    closest_match = None
+    closest_distance = float("inf")
+    for candidate in candidates:
+        distance = distance_func(target, candidate)
+        if distance < closest_distance:
+            closest_distance = distance
+            closest_match = candidate
+    return closest_match
+
+
+def process_line(
+    line: str, similarity_func: Callable[[str, str], float] = jaro_winkler_distance
+):
     year, rest = line.split("/")
     id, suffix = rest.split(".")
     up_id = id.upper()
@@ -80,20 +139,28 @@ def process_line(line: str):
     vex_products = get_vex_logical_products(id, year)
     legacy_only = legacy_products - vex_products
     vex_only = vex_products - legacy_products
+
     if not legacy_only and not vex_only:
         print(f"Yay! no diff for {line}")
         return
 
-    print(f"differences for file {line}")
+    print(f"Differences for file {line}")
+
     if legacy_only:
-        print("legacy only:")
-    for p in sorted(list(legacy_only)):
-        print(f"* {p}")
+        print("Legacy only:")
+        for legacy_product in sorted(list(legacy_only)):
+            closest_vex_product = find_closest_match(
+                legacy_product, list(vex_products), similarity_func
+            )
+            print(f"* {legacy_product} (closest in vex: {closest_vex_product})")
 
     if vex_only:
-        print("vex only:")
-    for p in sorted(list(vex_only)):
-        print(f"* {p}")
+        print("Vex only:")
+        for vex_product in sorted(list(vex_only)):
+            closest_legacy_product = find_closest_match(
+                vex_product, list(legacy_products), similarity_func
+            )
+            print(f"* {vex_product} (closest in legacy: {closest_legacy_product})")
 
 
 for line in sys.stdin.readlines():
