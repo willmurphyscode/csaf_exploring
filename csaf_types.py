@@ -33,7 +33,7 @@ class ProductStatus:
 class Threat:
     category: str
     details: str
-    product_ids: list[str]
+    product_ids: list[str] = field(default_factory=list)
 
 
 @dataclass_json
@@ -135,7 +135,7 @@ class ProductIdentificationHelper:
 class Product:
     name: str
     product_id: str
-    product_identification_helper: ProductIdentificationHelper | None
+    product_identification_helper: ProductIdentificationHelper | None = None
 
 
 # Discriminator function for deserializing based on structure
@@ -215,7 +215,7 @@ class Branch:
 @dataclass_json
 @dataclass
 class ProductTree:
-    relationships: list[Relationship]
+    relationships: list[Relationship] = field(default_factory=list)
     # branches: list[CategoryBranch | ProductBranch] = field(
     #     default_factory=list, metadata=config(decoder=branch_decoder)
     # )

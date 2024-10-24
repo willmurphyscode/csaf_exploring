@@ -17,6 +17,17 @@ CSAF_DIR = "csaf_vex_jsons"
 CSAF_VEX_ARCHIVE = "csaf_vex_2024-10-06.tar.zst"
 
 
+def normalize_java_package_name(package_name: str) -> str:
+    # Regex to remove the version details after the second hyphen or after a colon
+    pattern = r"^([^:]+)-\d+(:.*)?$"
+
+    # Apply the regex and return the trimmed name
+    match = re.match(pattern, package_name)
+    if match:
+        return match.group(1)  # Return the core package name
+    return package_name
+
+
 def normalize_kernel_name(package_name: str) -> str:
     # Regex to match and reduce kernel package names to their base
     pattern = r"^kernel(?:-rt)?(?:[.:].*)?$"
@@ -41,6 +52,8 @@ def normalize_package_names_with_versions(package_name: str) -> str:
     This function assumes that vex uses colons `:` instead of dashes `-` in some places, and dots `.`
     might be used in versioning. It will reformat the package name to follow the vex format.
     """
+    if "java" in package_name:
+        package_name = normalize_java_package_name(package_name)
     package_name = remove_rpm_version(package_name)
     package_name = normalize_kernel_name(package_name)
     # Replace the first `-` (often between product and version) with a colon `:`
@@ -61,18 +74,26 @@ def download_file(url, path):
 
 
 def get_legacy_products(up_id: str) -> set[str]:
-    path = os.path.join(LEGACY_DIR, up_id)
-    if not os.path.exists(path):
-        url = LEGACY_API_TEMPLATE.replace("ID", up_id)
-        download_file(url, path)
+    not_json_path = os.path.join(LEGACY_DIR, up_id)
+    json_path = os.path.join(LEGACY_DIR, f"{up_id}.json")
+    if os.path.exists(not_json_path) and not os.path.exists(json_path):
+        os.rename(not_json_path, json_path)
 
-    with open(path, "r") as file:
+    if not os.path.exists(json_path):
+        url = LEGACY_API_TEMPLATE.replace("ID", up_id)
+        download_file(url, json_path)
+
+    with open(json_path, "r") as file:
         data = json.load(file)
         results = set(
-            [item["package"] for item in data.get("affected_release", [])]
-            + [item["package_name"] for item in data.get("package_state", [])]
+            [item.get("package") for item in data.get("affected_release", [])]
+            + [item.get("package_name") for item in data.get("package_state", [])]
         )
-        return {normalize_package_names_with_versions(item) for item in results}
+        return {
+            normalize_package_names_with_versions(item)
+            for item in results
+            if item is not None
+        }
 
 
 def unzip_from_vex_archive(id: str, year: str):
@@ -144,6 +165,10 @@ def process_line(
     line: str, similarity_func: Callable[[str, str], float] = jaro_winkler_distance
 ):
     year, rest = line.split("/")
+    if int(year) <= 2003:
+        print("skipping " + line, file=sys.stderr)
+        return
+
     id, suffix = rest.split(".")
     up_id = id.upper()
     legacy_products = get_legacy_products(up_id)

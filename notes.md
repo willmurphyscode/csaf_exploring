@@ -1097,10 +1097,164 @@ Vex only:
 * virt-devel:rhel:8050020211001230723:b4937e53 (closest in legacy: virt-devel:rhel-8050020211001230723.b4937e53)
 * virt:rhel:8050020211001230723:b4937e53 (closest in legacy: virt:rhel-8050020211001230723.b4937e53)
 ```
+⬆ is fixed!
 
-There are 2 next steps here:
+``` sh
+❯ echo '2011/cve-2011-2437.json' | uv run hypo2.py
+Differences for file 2011/cve-2011-2437.json
 
-1. 
+Legacy only:
+* acroread (closest in vex: None)
+```
+
+⬆ is an interesting one - only the specific architectures are
+flagged, the src/noarch RPM isn't in the `branches` product
+tree at all.
+
+Unsurprisingly, Java versions will be challenging:
+
+``` sh
+❯ echo '2018/cve-2018-2678.json' | uv run hypo2.py 
+Differences for file 2018/cve-2018-2678.json
+
+Legacy only:
+* java-1.6.0-sun-1:1.6.0.181-1jpp.1.el6 (closest in vex: java-1.6.0-ibm)
+* java-1.6.0-sun-1:1.6.0.181-1jpp.2.el7 (closest in vex: java-1.6.0-ibm)
+* java-1.7.0-openjdk.13.0.el6_9 (closest in vex: java-1.6.0-ibm)
+* java-1.7.0-openjdk.13.0.el7_4 (closest in vex: java-1.6.0-ibm)
+* java-1.7.0-oracle-1:1.7.0.171-1jpp.1.el6_9 (closest in vex: java-1.6.0-ibm)
+* java-1.7.0-oracle-1:1.7.0.171-1jpp.1.el7 (closest in vex: java-1.6.0-ibm)
+* java-1.7.1-ibm-1:1.7.1.4.20-1jpp.1.el7 (closest in vex: java-1.6.0-ibm)
+* java-1.7.1-ibm-1:1.7.1.4.20-1jpp.3.el6_9 (closest in vex: java-1.6.0-ibm)
+* java-1.8.0-ibm-1:1.8.0.5.10-1jpp.1.el6_9 (closest in vex: java-1.6.0-ibm)
+* java-1.8.0-ibm-1:1.8.0.5.10-1jpp.1.el7 (closest in vex: java-1.6.0-ibm)
+* java-1.8.0-openjdk.el6_9 (closest in vex: java-1.6.0-ibm)
+* java-1.8.0-openjdk.el7_4 (closest in vex: java-1.6.0-ibm)
+* java-1.8.0-oracle-1:1.8.0.161-1jpp.1.el6_9 (closest in vex: java-1.6.0-ibm)
+* java-1.8.0-oracle-1:1.8.0.161-1jpp.2.el7 (closest in vex: java-1.6.0-ibm)
+```
+
+This one is tricky because the logical products assumption is broken again.
+
+After 1 attempt to fix, I get:
+
+``` sh
+❯ echo '2018/cve-2018-2678.json' | uv run hypo2.py
+Differences for file 2018/cve-2018-2678.json
+
+Legacy only:
+* java-1.6.0-sun (closest in vex: java-1.6.0-ibm)
+* java-1.7.0-openjdk (closest in vex: java-1.6.0-ibm)
+* java-1.7.0-oracle (closest in vex: java-1.6.0-ibm)
+* java-1.7.1-ibm (closest in vex: java-1.6.0-ibm)
+* java-1.8.0-ibm (closest in vex: java-1.6.0-ibm)
+* java-1.8.0-openjdk (closest in vex: java-1.6.0-ibm)
+* java-1.8.0-oracle (closest in vex: java-1.6.0-ibm)
+```
+
+``` sh
+❯ echo '2004/cve-2004-0001.json' | uv run hypo2.py                                             
+Differences for file 2004/cve-2004-0001.json
+
+Legacy only:
+* kernel (closest in vex: None)
+```
+
+This looks like we don't find `kernel` as a product name when RHEL itself is
+the vulnerable product.
+
+## Some next things
+
+1. Let's try to infer fix state from the remediations section
+2. Let's try to get a logical product lineage from each product id
+3. Based on 1 and 2, let's try to get some products with a fix state and
+   version constraints
+
+Startings with item 1:
+
+``` sh
+❯ fd --no-ignore -t f -g '*.json' csaf_vex_jsons | xargs cat | jq -c -r 'select(.vulnerabilities != null) | .vulnerabilities[] | select(.remediations != null) | .remediat
+ions[] | .category ' | sort | uniq -c | sort -n
+  41 workaround
+  70 none_available
+ 214 no_fix_planned
+1651 vendor_fix
+```
+
+Although the spec lists category as an enum that would tell us fixed state:
+
+```
+    mitigation
+    no_fix_planned
+    none_available
+    vendor_fix
+    workaround
+```
+
+So the only one we're missing is `mitigation`. I think that `none_available`
+maps well to `not fixed` and `no_fix_planned` maps well to `wont_fix`.
+`vendor_fix` is `fixed`. What's `workaround`?
+
+
+[The
+spec](https://docs.oasis-open.org/csaf/csaf/v2.0/os/csaf-v2.0-os.html#32312-vulnerabilities-property---remediations---category)
+says:
+
+> The value workaround indicates that the remediation contains information
+> about a configuration or specific deployment scenario that can be used to
+> avoid exposure to the vulnerability. There MAY be none, one, or more
+> workarounds available. This is typically the “first line of defense” against
+> a new vulnerability before a mitigation or vendor fix has been issued or even
+> discovered.
+
+Mitigations on the other hand (same link):
+
+> The value mitigation indicates that the remediation contains information
+> about a configuration or deployment scenario that helps to reduce the risk of
+> the vulnerability but that does not resolve the vulnerability on the affected
+> product. Mitigations MAY include using devices or access controls external to
+> the affected product. Mitigations MAY or MAY NOT be issued by the original
+> author of the affected product, and they MAY or MAY NOT be officially
+> sanctioned by the document producer.
+
+It looks like Red Hat has opted to suppply workarounds but not mitigations.
+
+
+For `flags` it looks like Red Hat only uses one flag:
+
+``` sh
+❯ fd --no-ignore -t f -g '*.json' csaf_vex_jsons | xargs cat | jq -c -r 'select(.vulnerabilities != null) | .vulnerabilities[] | select(.flags != null) | .flags[] | .labe
+l' | sort | uniq -c | sort -n
+ 272 vulnerable_code_not_present
+
+❯ fd --no-ignore -t f -g '*.json' csaf_vex_jsons | xargs cat | jq -c -r 'select(.vulnerabilities != null) | .vulnerabilities[] | .product_status | keys | .[]' | sort | un
+iq -c | sort -n
+  13 under_investigation
+ 313 known_affected
+ 332 known_not_affected
+ 926 fixed
+```
+
+So I think we infer version constraint and fixed state from the
+`vulnerability.remediations` and the `vulnerability.product_status` taken
+together.
+
+product_status     | remediation    | inferred fix state
+-------------------|----------------|-------------------
+fixed              | *              | fixed
+known_affected     | none_available | not-fixed
+known_affected     | no_fix_planned | wont-fix
+known_not_affected | -              | -
+under_investigation| -              | -
+
+There are some combinations that are possible there but are nonsense, like
+"known_not_affected" / "no_fix_planned", but I think the simple algorithm
+for fix state is:
+
+1. If product status is fixed, there's a fix
+2. If product status is known_affected, check whether remediations has
+   none_available or no_fix_planned.
+
 
 ## Questions I still have
 
