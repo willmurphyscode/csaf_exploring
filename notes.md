@@ -1258,6 +1258,5 @@ for fix state is:
 
 ## Questions I still have
 
-1. How do I infer fix state? Probably the flags section?
-2. Does a correct view of packages based on the hydra APIs include
+1. Does a correct view of packages based on the hydra APIs include
    affected_release and package_state nodes?
