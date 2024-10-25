@@ -1255,6 +1255,27 @@ for fix state is:
 2. If product status is known_affected, check whether remediations has
    none_available or no_fix_planned.
 
+## Trying to get to actual rows:
+
+1. Write a dataclass that represents vuln data and metadata - start
+   with only a few fields: product name, namespace, fix state
+2. Write a method for diffing sets of said dataclass
+3. Write a method on a CSAF_JSON for getting a set of those
+4. Write a method for VulnerabilityDB to get a set of those from a CVE ID
+5. Start hunting differences. Add fields.
+
+Method for step 3 (getting rows from CSAF JSON):
+
+1. For a given product id, get its ancestors via relationships
+2. The ancestor that's an app stream or distribution yields the
+   namespace (this is probably the first ancestor in relationships)
+3. The product ID without the namespace prefix or version suffix is
+   the product name
+4. The remediation entries and product status position tell the fix
+   state
+5. The fix state and product version nodes tell you the version
+   constraint
+
 
 ## Questions I still have
 
@@ -1263,4 +1284,7 @@ for fix state is:
 2. (Thanks Chris!) Can `:` appear in relates to product reference? Is the
    first `:` in a product ID useful? It seems since it can appear anywhere,
    it's not that useful.
-3. What can we infer from `product_name` vs `product_version`?
+3. What can we infer from `product_name` vs `product_version`? Are
+   product names distros / AppStreams and product versions
+   "products"? YES! `product_version` branches are versioned, installable
+   packages, and `prodcut_name` branches are things like `RHEL 8`

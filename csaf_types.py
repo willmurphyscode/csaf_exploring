@@ -2,6 +2,7 @@ from random import shuffle
 from dataclasses import dataclass, field
 from dataclasses_json import dataclass_json, LetterCase, config
 from collections import defaultdict
+import json
 
 
 @dataclass_json
@@ -208,6 +209,15 @@ class Branch:
             result.append(self)
         for b in self.branches:
             result.extend(b.product_version_branches())
+
+        return result
+
+    def product_name_branches(self) -> list["Branch"]:
+        result = list()
+        if self.category == "product_name":
+            result.append(self)
+        for b in self.branches:
+            result.extend(b.product_name_branches())
 
         return result
 
@@ -425,7 +435,7 @@ class Tracking:
 @dataclass_json
 @dataclass
 class Document:
-    aggregate_severity: str
+    aggregate_severity: AggregateSeverity
     category: str
     csaf_version: str
     distribution: Distribution
@@ -528,6 +538,12 @@ def from_dict(cls, data):
         return [from_dict(cls.__args__[0], item) for item in data]
     else:
         return data
+
+
+def from_path(path: str) -> CSAF_JSON:
+    with open(path, "r") as fh:
+        data = json.load(fh)
+        return CSAF_JSON.from_dict(data)
 
 
 if __name__ == "__main__":
