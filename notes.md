@@ -1288,3 +1288,4 @@ Method for step 3 (getting rows from CSAF JSON):
    product names distros / AppStreams and product versions
    "products"? YES! `product_version` branches are versioned, installable
    packages, and `prodcut_name` branches are things like `RHEL 8`
+4. Can I look at these products and decide what's a source RPM and what's not?

@@ -51,7 +51,7 @@ def namespace_or_none_if_ignored(distro_like_name: str) -> str | None:
         if distro == "Red Hat Enterprise Linux":
             result = RHEL_VERSIONS_TO_NAMESPACES.get(version)
 
-    print(f"getting ns for {distro_like_name}: {result}", file=sys.stderr)
+    # print(f"getting ns for {distro_like_name}: {result}", file=sys.stderr)
     return result
 
 
@@ -97,7 +97,7 @@ def transform(c: CSAF_JSON) -> set[VulnerabilityRecordPair]:
         def clean_product_id(pid: str) -> str:
             p = trim_rpm_version_suffix(pid)
             p = p.removeprefix(ids_to_first_parents.get(pid, ""))
-            p = p.removeprefix(":")
+            p = p.removeprefix(":").removesuffix("-devel").removesuffix("-headers")
             return p
 
         products = [trim_rpm_version_suffix(p) for p in fixed | not_fixed]
@@ -107,30 +107,51 @@ def transform(c: CSAF_JSON) -> set[VulnerabilityRecordPair]:
         product_ids_to_logical_products = {
             p: clean_product_id(p) for p in fixed | not_fixed
         }
+        # TODO: collapses a namespace
+        # use product_ids_to_namespaces
         logical_products_to_namespaces = {
             product_ids_to_logical_products.get(p): namespace_or_none_if_ignored(
                 distro_ids_to_names.get(ids_to_first_parents.get(p, ""), "")
             )
             for p in product_ids_to_logical_products
         }
+        product_ids_to_namespaces = {
+            p: namespace_or_none_if_ignored(
+                distro_ids_to_names.get(ids_to_first_parents.get(p, ""), "")
+            )
+            for p in unaffected | fixed | not_fixed
+        }
+
         data_source = ""
         for r in c.document.references:
             if r.category == "self":
                 data_source = r.url
 
+        source_rpm_ids = c.product_tree.branches[0].source_rpm_product_ids()
+
         for k, p in product_ids_to_logical_products.items():
-            namespace = logical_products_to_namespaces.get(p)
+            namespace = product_ids_to_namespaces.get(k)
+            if k == "red_hat_enterprise_linux_6:php":
+                print(f"{k}: {p} in {namespace}")
             if not namespace:
                 # print(f"for {k} ({p}) skipping b/c no namespace")
+                continue
+            found = False
+            for srpm_id in source_rpm_ids:
+                if k.endswith(srpm_id):
+                    found = True
+            if not found:
+                print(f"skipping {k} ({p}) b/c no src rpm found", file=sys.stderr)
                 continue
             if "-langpack" in p:
                 print(f"skipping {k} ({p}) b/c langpack", file=sys.stderr)
                 continue
+            # print(f"appending {p}", file=sys.stderr)
             result.append(
                 VulnerabilityRecordPair(
                     vulnerability=Vulnerability(
                         id=id,
-                        package_name=trim_rpm_version_suffix(p),
+                        package_name=p,
                         namespace=namespace,
                     ),
                     metadata=VulnerabilityMetadata(
@@ -146,15 +167,15 @@ def transform(c: CSAF_JSON) -> set[VulnerabilityRecordPair]:
     return set(result)
 
 
-def summarize_diff(extra, missing):
-    if extra:
-        print("found extra vulns")
-        for e in extra:
+def summarize_diff(db_only, csaf_only):
+    if db_only:
+        print("vulns only in old data")
+        for e in db_only:
             print(f"  {e}")
 
-    if missing:
-        print("found missing vulns")
-        for m in missing:
+    if csaf_only:
+        print("vulns only in new data")
+        for m in csaf_only:
             print(f"  {m}")
 
 
@@ -174,13 +195,13 @@ def main():
         up_id = line.split("/")[-1].removesuffix(".json").upper()
         print(f"up id is {up_id}")
         from_db = vuln_db.get_vulnerability_records(up_id)
-        extra, missing = compare_vulnerability_sets(
+        csaf_only, db_only = compare_vulnerability_sets(
             set(from_csaf_jsons),
             set(from_db),
             ["id", "severity", "package_name", "namespace"],
         )
-        if extra or missing:
-            summarize_diff(extra, missing)
+        if db_only or csaf_only:
+            summarize_diff(db_only, csaf_only)
         else:
             print(f"yay - no diff for {line}")
 

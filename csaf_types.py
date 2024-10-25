@@ -3,6 +3,7 @@ from dataclasses import dataclass, field
 from dataclasses_json import dataclass_json, LetterCase, config
 from collections import defaultdict
 import json
+import re
 
 
 @dataclass_json
@@ -107,6 +108,20 @@ class Vulnerability:
     remediations: list[Remediation] = field(default_factory=list)
     threats: list[Threat] = field(default_factory=list)
 
+    def all_advisory_urls(self) -> set[str]:
+        result = set()
+        for r in self.remediations:
+            if r.category == "vendor_fix":
+                result.add(r.url)
+
+        return result
+
+    def advisory_url_for_product(self, product_id: str) -> str | None:
+        for r in self.remediations:
+            if r.category == "vendor_fix" and product_id in r.product_ids:
+                return r.url
+        return None
+
 
 @dataclass_json
 @dataclass
@@ -192,6 +207,19 @@ class Branch:
         accumulator.add(self.category)
         for b in self.branches:
             b.acculumulate_categories_recursively(accumulator)
+
+    def source_rpm_product_ids(self) -> set[str]:
+        result = set()
+        if self.product and self.product.product_identification_helper:
+            if (
+                self.product.product_identification_helper.purl
+                and "arch=src" in self.product.product_identification_helper.purl
+            ) or re.search(r"\.el\d+.src$", self.product.product_id):
+                result.add(self.product.product_id)
+
+        for b in self.branches:
+            result = result | b.source_rpm_product_ids()
+        return result
 
     # def product_branches(self) -> list[ProductBranch]:
     def product_branches(self) -> list["Branch"]:
