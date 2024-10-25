@@ -321,7 +321,7 @@ class ProductTree:
             if b.product
             and b.product.product_identification_helper
             and b.product.product_identification_helper.purl
-            and "rpmmod" in b.product.product_identification_helper.purl
+            # and "rpmmod" in b.product.product_identification_helper.purl
         ]
         return top_level_products + noarch_products
 

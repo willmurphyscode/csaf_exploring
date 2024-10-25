@@ -1260,3 +1260,7 @@ for fix state is:
 
 1. Does a correct view of packages based on the hydra APIs include
    affected_release and package_state nodes?
+2. (Thanks Chris!) Can `:` appear in relates to product reference? Is the
+   first `:` in a product ID useful? It seems since it can appear anywhere,
+   it's not that useful.
+3. What can we infer from `product_name` vs `product_version`?

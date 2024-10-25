@@ -7,6 +7,7 @@ import sys
 import tarfile
 import zstandard as zstd
 from csaf_types import CSAF_JSON
+from vulnerability_db import VulnerabilityDB
 
 import jellyfish
 
@@ -15,6 +16,11 @@ LEGACY_DIR = "legacy_jsons"
 LEGACY_API_TEMPLATE = "https://access.redhat.com/hydra/rest/securitydata/cve/ID.json"
 CSAF_DIR = "csaf_vex_jsons"
 CSAF_VEX_ARCHIVE = "csaf_vex_2024-10-06.tar.zst"
+
+
+def trim_rpm_version_suffix(product_id: str) -> str:
+    version_suffix = r"-(0|1):.*$"
+    return re.sub(version_suffix, "", product_id)
 
 
 def normalize_java_package_name(package_name: str) -> str:
@@ -56,12 +62,26 @@ def normalize_package_names_with_versions(package_name: str) -> str:
         package_name = normalize_java_package_name(package_name)
     package_name = remove_rpm_version(package_name)
     package_name = normalize_kernel_name(package_name)
+    package_name = trim_rpm_version_suffix(package_name)
     # Replace the first `-` (often between product and version) with a colon `:`
     # convert foo:rhel-8050020211001230723.b4937e53 to foo:rhel:8050020211001230723:b4937e53
     pattern = r"(rhel-)(\d{19})\.([a-f0-9]{8})$"
 
     # Check if the string matches the pattern at the end
     return re.sub(pattern, r"rhel:\2:\3", package_name)
+
+
+def remove_suffixed_variants(strs: set[str], suffixes: set[str]) -> set[str]:
+    result = set()
+    for s in strs:
+        skip = False
+        for suffix in suffixes:
+            if s.endswith(suffix) and s.replace(suffix, "") in strs:
+                skip = True
+                break
+        if not skip:
+            result.add(s)
+    return result
 
 
 def download_file(url, path):
@@ -121,7 +141,13 @@ def get_vex_logical_products(id: str, year: str) -> set[str]:
     with open(path, "r") as file:
         data = json.load(file)
         c = CSAF_JSON.from_dict(data)
-        return set([p.product_id for p in c.product_tree.logical_products()])
+        result = set(
+            [
+                trim_rpm_version_suffix(p.product_id)
+                for p in c.product_tree.logical_products()
+            ]
+        )
+        return remove_suffixed_variants(result, {"-devel", "-doc"})
 
 
 # Levenshtein distance as a more flexible alternative
@@ -162,7 +188,9 @@ def find_closest_match(
 
 
 def process_line(
-    line: str, similarity_func: Callable[[str, str], float] = jaro_winkler_distance
+    line: str,
+    get_legacy_products: Callable[str, set[str]] = get_legacy_products,
+    similarity_func: Callable[[str, str], float] = jaro_winkler_distance,
 ):
     year, rest = line.split("/")
     if int(year) <= 2003:
@@ -199,13 +227,29 @@ def process_line(
             print(f"* {vex_product} (closest in legacy: {closest_legacy_product})")
 
 
-for line in sys.stdin.readlines():
-    if not line or "/" not in line:
-        continue
+def main():
+    is_db = "-db" in sys.argv
+    get_legacy_packages: Callable[str, set[str]] = get_legacy_products
+    if is_db:
+        db_path = os.path.join(
+            os.getenv("HOME", default=""),
+            "Library/Caches/grype/db/5/vulnerability.db",
+        )
+        vuln_db = VulnerabilityDB(db_path=db_path)
+        get_legacy_packages = vuln_db.get_package_names
+        print("getting legacy packages from vuln db", file=sys.stderr)
 
-    # get cve id from like 2015/cve-2015-5580.json
-    try:
-        process_line(line)
-    except Exception as e:
-        print(f"failed to process line {line}: {e.__class__}")
-        raise
+    for line in sys.stdin.readlines():
+        if not line or "/" not in line:
+            continue
+
+        # get cve id from like 2015/cve-2015-5580.json
+        try:
+            process_line(line, get_legacy_products=get_legacy_packages)
+        except Exception as e:
+            print(f"failed to process line {line}: {e.__class__}")
+            raise
+
+
+if __name__ == "__main__":
+    main()
