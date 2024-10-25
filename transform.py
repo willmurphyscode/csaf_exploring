@@ -67,7 +67,7 @@ def get_severity(aggregate_severity_text: str) -> str:
 
 
 def trim_rpm_version_suffix(product_id: str) -> str:
-    version_suffix = r"-(0|1):.*$"
+    version_suffix = r"-(\d+):.*$"
     return re.sub(version_suffix, "", product_id)
 
 
