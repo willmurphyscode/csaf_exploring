@@ -34,17 +34,22 @@ LANGPACK_RE = r"-langpack(-[a-z]{2,3})?"
 
 APP_STREAM_RE = r"Red Hat Enterprise Linux AppStream \(v\. (\d+)\)"
 BASE_OS_RE = r"Red Hat Enterprise Linux BaseOS \(v\. (\d+)\)"
+RHEL_5_SERVER_RE = r"Red Hat Enterprise Linux \(v\. (\d+) server\)"
 
 
 def namespace_or_none_if_ignored(distro_like_name: str) -> str | None:
     result = None
     match = re.search(APP_STREAM_RE, distro_like_name)
     base_os_match = re.search(BASE_OS_RE, distro_like_name)
+    old_rhel_server_match = re.search(RHEL_5_SERVER_RE, distro_like_name)
     if match:
         version = match.group(1)
         result = RHEL_VERSIONS_TO_NAMESPACES.get(version)
     elif base_os_match:
         version = base_os_match.group(1)
+        result = RHEL_VERSIONS_TO_NAMESPACES.get(version)
+    elif old_rhel_server_match:
+        version = old_rhel_server_match.group(1)
         result = RHEL_VERSIONS_TO_NAMESPACES.get(version)
     elif " " in distro_like_name:
         distro, version = distro_like_name.rsplit(" ", 1)
@@ -107,14 +112,6 @@ def transform(c: CSAF_JSON) -> set[VulnerabilityRecordPair]:
         product_ids_to_logical_products = {
             p: clean_product_id(p) for p in fixed | not_fixed
         }
-        # TODO: collapses a namespace
-        # use product_ids_to_namespaces
-        logical_products_to_namespaces = {
-            product_ids_to_logical_products.get(p): namespace_or_none_if_ignored(
-                distro_ids_to_names.get(ids_to_first_parents.get(p, ""), "")
-            )
-            for p in product_ids_to_logical_products
-        }
         product_ids_to_namespaces = {
             p: namespace_or_none_if_ignored(
                 distro_ids_to_names.get(ids_to_first_parents.get(p, ""), "")
@@ -141,7 +138,7 @@ def transform(c: CSAF_JSON) -> set[VulnerabilityRecordPair]:
                 if k.endswith(srpm_id):
                     found = True
             if not found:
-                print(f"skipping {k} ({p}) b/c no src rpm found", file=sys.stderr)
+                # print(f"skipping {k} ({p}) b/c no src rpm found", file=sys.stderr)
                 continue
             if "-langpack" in p:
                 print(f"skipping {k} ({p}) b/c langpack", file=sys.stderr)
