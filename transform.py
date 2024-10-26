@@ -37,6 +37,18 @@ BASE_OS_RE = r"Red Hat Enterprise Linux BaseOS \(v\. (\d+)\)"
 RHEL_5_SERVER_RE = r"Red Hat Enterprise Linux \(v\. (\d+) server\)"
 
 
+def debug_print(msg: str, file=sys.stderr):
+    if "-v" not in sys.argv:
+        return
+    filter = None
+    if "-g" in sys.argv:
+        ix = sys.argv.index("-g")
+        filter = sys.argv[ix + 1]
+    if filter and filter not in msg:
+        return
+    print(msg, file=file)
+
+
 def namespace_or_none_if_ignored(distro_like_name: str) -> str | None:
     result = None
     match = re.search(APP_STREAM_RE, distro_like_name)
@@ -56,13 +68,13 @@ def namespace_or_none_if_ignored(distro_like_name: str) -> str | None:
         if distro == "Red Hat Enterprise Linux":
             result = RHEL_VERSIONS_TO_NAMESPACES.get(version)
 
-    # print(f"getting ns for {distro_like_name}: {result}", file=sys.stderr)
+    debug_print(f"getting ns for {distro_like_name}: {result}", file=sys.stderr)
     return result
 
 
 def get_severity(aggregate_severity_text: str) -> str:
     if aggregate_severity_text not in SEVERITY_MAP:
-        print(f"missing {aggregate_severity_text}", file=sys.stderr)
+        debug_print(f"missing {aggregate_severity_text}", file=sys.stderr)
     return SEVERITY_MAP.get(aggregate_severity_text, "TODO")
 
 
@@ -129,21 +141,21 @@ def transform(c: CSAF_JSON) -> set[VulnerabilityRecordPair]:
         for k, p in product_ids_to_logical_products.items():
             namespace = product_ids_to_namespaces.get(k)
             if k == "red_hat_enterprise_linux_6:php":
-                print(f"{k}: {p} in {namespace}")
+                debug_print(f"{k}: {p} in {namespace}")
             if not namespace:
-                # print(f"for {k} ({p}) skipping b/c no namespace")
+                debug_print(f"for {k} ({p}) skipping b/c no namespace")
                 continue
             found = False
             for srpm_id in source_rpm_ids:
                 if k.endswith(srpm_id):
                     found = True
             if not found:
-                # print(f"skipping {k} ({p}) b/c no src rpm found", file=sys.stderr)
+                debug_print(f"skipping {k} ({p}) b/c no src rpm found", file=sys.stderr)
                 continue
             if "-langpack" in p:
-                print(f"skipping {k} ({p}) b/c langpack", file=sys.stderr)
+                debug_print(f"skipping {k} ({p}) b/c langpack", file=sys.stderr)
                 continue
-            # print(f"appending {p}", file=sys.stderr)
+            debug_print(f"appending {p}", file=sys.stderr)
             result.append(
                 VulnerabilityRecordPair(
                     vulnerability=Vulnerability(
@@ -186,11 +198,11 @@ def main():
         line = line.strip()
         if not line or "/" not in line:
             continue
-        print(f"loading from path: {line}")
+        debug_print(f"loading from path: {line}")
         c = from_path(line)
         from_csaf_jsons = transform(c)
         up_id = line.split("/")[-1].removesuffix(".json").upper()
-        print(f"up id is {up_id}")
+        debug_print(f"up id is {up_id}")
         from_db = vuln_db.get_vulnerability_records(up_id)
         csaf_only, db_only = compare_vulnerability_sets(
             set(from_csaf_jsons),
@@ -199,6 +211,8 @@ def main():
         )
         if db_only or csaf_only:
             summarize_diff(db_only, csaf_only)
+            print(f"failed for line {line}", file=sys.stderr)
+            sys.exit(1)
         else:
             print(f"yay - no diff for {line}")
 
