@@ -38,6 +38,7 @@ BASE_OS_RE = r"Red Hat Enterprise Linux BaseOS \(v\. (\d+)\)"
 RHEL_5_SERVER_RE = r"Red Hat Enterprise Linux \(v\. (\d+) server\)"
 RHEL_DESKTOP_RE = r"Red Hat Enterprise Linux Desktop \(v\. (\d+)\)"
 RHEL_CLIENT_OPTIONAL_RE = r"Red Hat Enterprise Linux Client Optional \(v\. (\d+)\)"
+RHEL_RT_RE = r"Red Hat Enterprise Linux RT \(v\. (\d+)\)"
 
 
 def debug_print(msg: str, file=sys.stderr):
@@ -61,6 +62,7 @@ def namespace_or_none_if_ignored(distro_like_name: str) -> str | None:
         RHEL_5_SERVER_RE,
         RHEL_DESKTOP_RE,
         RHEL_CLIENT_OPTIONAL_RE,
+        RHEL_RT_RE,
     ]
     for r in res:
         match = re.search(r, distro_like_name)
