@@ -35,6 +35,7 @@ LANGPACK_RE = r"-langpack(-[a-z]{2,3})?"
 APP_STREAM_RE = r"Red Hat Enterprise Linux AppStream \(v\. (\d+)\)"
 BASE_OS_RE = r"Red Hat Enterprise Linux BaseOS \(v\. (\d+)\)"
 RHEL_5_SERVER_RE = r"Red Hat Enterprise Linux \(v\. (\d+) server\)"
+RHEL_DESKTOP_RE = r"Red Hat Enterprise Linux Desktop \(v\. (\d+)\)"
 
 
 def debug_print(msg: str, file=sys.stderr):
@@ -54,6 +55,7 @@ def namespace_or_none_if_ignored(distro_like_name: str) -> str | None:
     match = re.search(APP_STREAM_RE, distro_like_name)
     base_os_match = re.search(BASE_OS_RE, distro_like_name)
     old_rhel_server_match = re.search(RHEL_5_SERVER_RE, distro_like_name)
+    rhel_desktop_match = re.search(RHEL_DESKTOP_RE, distro_like_name)
     if match:
         version = match.group(1)
         result = RHEL_VERSIONS_TO_NAMESPACES.get(version)
@@ -62,6 +64,9 @@ def namespace_or_none_if_ignored(distro_like_name: str) -> str | None:
         result = RHEL_VERSIONS_TO_NAMESPACES.get(version)
     elif old_rhel_server_match:
         version = old_rhel_server_match.group(1)
+        result = RHEL_VERSIONS_TO_NAMESPACES.get(version)
+    elif rhel_desktop_match:
+        version = rhel_desktop_match.group(1)
         result = RHEL_VERSIONS_TO_NAMESPACES.get(version)
     elif " " in distro_like_name:
         distro, version = distro_like_name.rsplit(" ", 1)
