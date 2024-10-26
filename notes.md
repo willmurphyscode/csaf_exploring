@@ -1277,6 +1277,88 @@ Method for step 3 (getting rows from CSAF JSON):
    constraint
 
 
+Also, for CVE-2019-13272, it looks like the legacy data lists `kernel-rt`
+(presumably "real time kernel") as part of RHEL8, but the new JSON only lists
+it as part of the real-time version of RHEL 8, which makes sense. For now I have
+added real time kernel looking strings to my RHEL regexes.
+
+## pick up where you left off:
+
+``` sh
+❯ fd -t f --no-ignore -g '*.json' csaf_vex_jsons | shuf | head -n 2 | uv run transform.py
+loading from path: csaf_vex_jsons/2004/cve-2004-0057.json
+up id is CVE-2004-0057
+yay - no diff for csaf_vex_jsons/2004/cve-2004-0057.json
+loading from path: csaf_vex_jsons/2024/cve-2024-34158.json
+up id is CVE-2024-34158
+vulns only in old data
+  ('CVE-2024-34158', 'Medium', 'go-toolset', 'redhat:distro:redhat:8')
+vulns only in new data
+  ('CVE-2024-34158', 'Medium', 'container-tools:rhel8/podman', 'redhat:distro:redhat:8')
+  ('CVE-2024-34158', 'Medium', 'go-toolset:rhel8:8100020240918165244:a3795dee:delve', 'redhat:distro:redhat:8')
+  ('CVE-2024-34158', 'Medium', 'go-toolset:rhel8:8100020240918165244:a3795dee:golang', 'redhat:distro:redhat:8')
+  ('CVE-2024-34158', 'Medium', 'go-toolset:rhel8:8100020240918165244:a3795dee:go-toolset', 'redhat:distro:redhat:8')
+```
+
+Looks like a `go-toolset` is a bundle of things with a CVE attributed to it...
+
+I think I get the same problem with some other bundles of language packages. Consider
+also CVE-2019-7548:
+
+``` sh
+❯ echo csaf_vex_jsons/2019/cve-2019-7548.json | uv run transform.py              
+vulns only in old data
+  ('CVE-2019-7548', 'Medium', 'python-sqlalchemy', 'redhat:distro:redhat:6')
+  ('CVE-2019-7548', 'Medium', 'python-sqlalchemy', 'redhat:distro:redhat:7')
+  ('CVE-2019-7548', 'Medium', 'python36', 'redhat:distro:redhat:8')
+failed for line csaf_vex_jsons/2019/cve-2019-7548.json
+```
+
+There are a few mysteries here:
+
+1. Why doesn't the legacy data include `python27` as well?
+
+``` json
+{
+    "product_name" : "Red Hat Enterprise Linux 8",
+    "release_date" : "2019-05-07T00:00:00Z",
+    "advisory" : "RHSA-2019:0981",
+    "cpe" : "cpe:/a:redhat:enterprise_linux:8",
+    "package" : "python27:2.7-8000020190410132513.c0efe978"
+},
+{
+    "product_name" : "Red Hat Enterprise Linux 8",
+    "release_date" : "2019-05-07T00:00:00Z",
+    "advisory" : "RHSA-2019:0984",
+    "cpe" : "cpe:/a:redhat:enterprise_linux:8",
+    "package" : "python36:3.6-8000020190410133122.593c47b3"
+}
+```
+
+Those look exactly the same except for the python version and a slightly
+different RHSA number.
+
+I think maybe I have a gap in "has_ancestor" where I search
+`default_component_of` relationships, but don't search the recursive shape of
+the product_tree.branches structure. (Actually this is probably wrong).
+
+``` sh
+❯ echo csaf_vex_jsons/2019/cve-2019-7548.json | uv run transform.py -v -g AppStream-8.0.0.Z:python36:3.6:8000020190410133122:593c47b3:python36-0:3.6.8
+-2.module+el8.0.0+2975+e0f02136.src
+skipping AppStream-8.0.0.Z:python36:3.6:8000020190410133122:593c47b3:python36-0:3.6.8-2.module+el8.0.0+2975+e0f02136.src (python36:3.6:800002019041013
+3122:593c47b3:python36) b/c no src rpm found
+vulns only in old data
+  ('CVE-2019-7548', 'Medium', 'python-sqlalchemy', 'redhat:distro:redhat:7')
+  ('CVE-2019-7548', 'Medium', 'python36', 'redhat:distro:redhat:8')
+  ('CVE-2019-7548', 'Medium', 'python-sqlalchemy', 'redhat:distro:redhat:6')
+failed for line csaf_vex_jsons/2019/cve-2019-7548.json
+```
+
+Also we have IDs like
+`"AppStream-8.0.0.Z:python27:2.7:8000020190410132513:c0efe978:python-urllib3-0:1.23-7.module+el8.0.0+2961+596d0223.src"`
+That are clearly for a src RPM, but maybe don't count because they're part of
+`python27:2.7`??
+
 ## Questions I still have
 
 1. Does a correct view of packages based on the hydra APIs include
@@ -1289,3 +1371,4 @@ Method for step 3 (getting rows from CSAF JSON):
    "products"? YES! `product_version` branches are versioned, installable
    packages, and `prodcut_name` branches are things like `RHEL 8`
 4. Can I look at these products and decide what's a source RPM and what's not?
+5. How does `default_component_of` relate to src rpm ness?
