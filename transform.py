@@ -11,6 +11,7 @@ from vulnerability_db import (
 )
 
 SEVERITY_MAP = {
+    "critical": "Critical",
     "important": "High",
     "moderate": "Medium",
     "low": "Low",
@@ -36,6 +37,7 @@ APP_STREAM_RE = r"Red Hat Enterprise Linux AppStream \(v\. (\d+)\)"
 BASE_OS_RE = r"Red Hat Enterprise Linux BaseOS \(v\. (\d+)\)"
 RHEL_5_SERVER_RE = r"Red Hat Enterprise Linux \(v\. (\d+) server\)"
 RHEL_DESKTOP_RE = r"Red Hat Enterprise Linux Desktop \(v\. (\d+)\)"
+RHEL_CLIENT_OPTIONAL_RE = r"Red Hat Enterprise Linux Client Optional \(v\. (\d+)\)"
 
 
 def debug_print(msg: str, file=sys.stderr):
@@ -52,26 +54,26 @@ def debug_print(msg: str, file=sys.stderr):
 
 def namespace_or_none_if_ignored(distro_like_name: str) -> str | None:
     result = None
-    match = re.search(APP_STREAM_RE, distro_like_name)
-    base_os_match = re.search(BASE_OS_RE, distro_like_name)
-    old_rhel_server_match = re.search(RHEL_5_SERVER_RE, distro_like_name)
-    rhel_desktop_match = re.search(RHEL_DESKTOP_RE, distro_like_name)
-    if match:
-        version = match.group(1)
-        result = RHEL_VERSIONS_TO_NAMESPACES.get(version)
-    elif base_os_match:
-        version = base_os_match.group(1)
-        result = RHEL_VERSIONS_TO_NAMESPACES.get(version)
-    elif old_rhel_server_match:
-        version = old_rhel_server_match.group(1)
-        result = RHEL_VERSIONS_TO_NAMESPACES.get(version)
-    elif rhel_desktop_match:
-        version = rhel_desktop_match.group(1)
-        result = RHEL_VERSIONS_TO_NAMESPACES.get(version)
-    elif " " in distro_like_name:
-        distro, version = distro_like_name.rsplit(" ", 1)
+    version = None
+    res = [
+        APP_STREAM_RE,
+        BASE_OS_RE,
+        RHEL_5_SERVER_RE,
+        RHEL_DESKTOP_RE,
+        RHEL_CLIENT_OPTIONAL_RE,
+    ]
+    for r in res:
+        match = re.search(r, distro_like_name)
+        if match:
+            version = match.group(1)
+            break
+    if not version and " " in distro_like_name:
+        distro, v = distro_like_name.rsplit(" ", 1)
         if distro == "Red Hat Enterprise Linux":
-            result = RHEL_VERSIONS_TO_NAMESPACES.get(version)
+            version = v
+
+    if version:
+        result = RHEL_VERSIONS_TO_NAMESPACES.get(version)
 
     debug_print(f"getting ns for {distro_like_name}: {result}", file=sys.stderr)
     return result
@@ -120,7 +122,7 @@ def transform(c: CSAF_JSON) -> set[VulnerabilityRecordPair]:
             p = trim_rpm_version_suffix(pid)
             p = p.removeprefix(ids_to_first_parents.get(pid, ""))
             p = p.removeprefix(":").removesuffix("-devel").removesuffix("-headers")
-            return p
+            return p.lower()
 
         products = [trim_rpm_version_suffix(p) for p in fixed | not_fixed]
         products = [p.removeprefix(ids_to_first_parents.get(p, "")) for p in products]
