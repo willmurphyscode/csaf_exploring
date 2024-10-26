@@ -278,16 +278,17 @@ class ProductTree:
             here = self.parent(here)
         return last_product_id
 
-    def second_parent(self, product_id: str) -> list[str]:
-        result = []
+    def second_parent(self, product_id: str) -> str | None:
+        root = self.first_parent(product_id)  # Find the root using first_parent
+        here = product_id
+        previous = None
 
-        for child, parent in self.product_id_to_parent.items():
-            # Check if the parent has a parent (i.e., a grandparent for the child)
-            if parent not in self.product_id_to_parent:
-                # If the parent is not in the dictionary, it has no parent (grandparent of child doesn't exist)
-                result.append(child)
+        # Traverse up the tree until we reach the root
+        while here and here != root:
+            previous = here  # Track the child of the root
+            here = self.parent(here)  # Move up one level
 
-        return result
+        return previous  # This is the immediate child of the root
 
     def distinct_branch_categories(self) -> set[str]:
         result = set()
