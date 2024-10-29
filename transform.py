@@ -126,12 +126,13 @@ def transform(c: CSAF_JSON) -> set[VulnerabilityRecordPair]:
 
         # TODO: make this dict[str,str] where keys are original ids and values are cleaned up ids
         def clean_product_id(pid: str) -> str:
-            p = trim_rpm_version_suffix(pid)
             second_parent = ids_to_second_parents.get(pid)
+            p = pid
             if second_parent:
                 # p = p.removeprefix(second_parent)
                 p = second_parent
                 p = re.sub(r":[0-9]+\.[0-9]+:\d{19}:[a-fA-F0-9]{8}$", "", p)
+            p = trim_rpm_version_suffix(p)
             p = p.removeprefix(ids_to_first_parents.get(pid, ""))
             p = p.removeprefix(":").removesuffix("-devel").removesuffix("-headers")
             return p.lower()
