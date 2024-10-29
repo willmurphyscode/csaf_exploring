@@ -1359,6 +1359,18 @@ Also we have IDs like
 That are clearly for a src RPM, but maybe don't count because they're part of
 `python27:2.7`??
 
+``` sh
+❯ echo csaf_vex_jsons/2020/cve-2020-13659.json | uv run transform.py 
+vulns only in old data
+  ('CVE-2020-13659', 'Low', 'qemu-kvm', 'redhat:distro:redhat:8')
+vulns only in new data
+  ('CVE-2020-13659', 'Low', 'virt:rhel/qemu-kvm', 'redhat:distro:redhat:8')
+failed for line csaf_vex_jsons/2020/cve-2020-13659.json
+```
+
+I'm not sure why the old data trims `virt:rhel` off the beginning. It's present
+at https://access.redhat.com/security/cve/CVE-2020-13659.
+
 ## Questions I still have
 
 1. Does a correct view of packages based on the hydra APIs include
