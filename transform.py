@@ -139,7 +139,7 @@ def transform(c: CSAF_JSON) -> set[VulnerabilityRecordPair]:
             if second_parent:
                 # p = p.removeprefix(second_parent)
                 p = second_parent
-                p = re.sub(r":\d(\.\d)*:\d{19}:[a-fA-F0-9]{8}$", "", p)
+                p = re.sub(r":\d+(\.\d)*:\d{19}:[a-fA-F0-9]{8}$", "", p)
             p = trim_rpm_version_suffix(p)
             p = p.removeprefix(ids_to_first_parents.get(pid, ""))
             # p = p.removeprefix(":").removesuffix("-devel").removesuffix("-headers")
