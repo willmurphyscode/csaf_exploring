@@ -36,11 +36,12 @@ LANGPACK_RE = r"-langpack(-[a-z]{2,3})?"
 APP_STREAM_RE = r"Red Hat Enterprise Linux AppStream \(v\. (\d+)\)"
 BASE_OS_RE = r"Red Hat Enterprise Linux BaseOS \(v\. (\d+)\)"
 RHEL_5_SERVER_RE = r"Red Hat Enterprise Linux \(v\. (\d+) server\)"
-RHEL_5_SERVER_RE2 = r"Red Hat Enterprise Linux Server \(v\. (\d+)\)"
-RHEL_DESKTOP_RE = r"Red Hat Enterprise Linux Desktop \(v\. (\d+)\)"
+RHEL_5_SERVER_RE2 = r"^Red Hat Enterprise Linux Server \(v\. (\d+)\)"
+RHEL_DESKTOP_RE = r"^Red Hat Enterprise Linux Desktop \(v\. (\d+)\)"
 RHEL_CLIENT_OPTIONAL_RE = r"Red Hat Enterprise Linux Client Optional \(v\. (\d+)\)"
 RHEL_CLIENT_RE = r"Red Hat Enterprise Linux Client \(v\. (\d+)\)"
 RHEL_RT_RE = r"Red Hat Enterprise Linux RT \(v\. (\d+)\)"
+RHEL_CRB_RE = r"Red Hat CodeReady Linux Builder \(v\. (\d+)\)"
 
 
 def debug_print(msg: str, file=sys.stderr):
@@ -68,6 +69,7 @@ def namespace_or_none_if_ignored(distro_like_name: str) -> str | None:
         RHEL_CLIENT_OPTIONAL_RE,
         RHEL_CLIENT_RE,
         RHEL_RT_RE,
+        RHEL_CRB_RE,
     ]
     for r in res:
         match = re.search(r, distro_like_name)
@@ -138,7 +140,8 @@ def transform(c: CSAF_JSON) -> set[VulnerabilityRecordPair]:
                 p = re.sub(r":[0-9]+\.[0-9]+:\d{19}:[a-fA-F0-9]{8}$", "", p)
             p = trim_rpm_version_suffix(p)
             p = p.removeprefix(ids_to_first_parents.get(pid, ""))
-            p = p.removeprefix(":").removesuffix("-devel").removesuffix("-headers")
+            # p = p.removeprefix(":").removesuffix("-devel").removesuffix("-headers")
+            p = p.removeprefix(":").removesuffix("-headers")
             return p.lower()
 
         products = [trim_rpm_version_suffix(p) for p in fixed | not_fixed]
@@ -161,6 +164,14 @@ def transform(c: CSAF_JSON) -> set[VulnerabilityRecordPair]:
                 data_source = r.url
 
         source_rpm_ids = c.product_tree.branches[0].source_rpm_product_ids()
+        rpm_module_branches = {
+            b.product.product_id
+            for b in c.product_tree.product_branches()
+            if b.product
+            and b.product.product_identification_helper
+            and b.product.product_identification_helper.purl
+            and "rpmmod" in b.product.product_identification_helper.purl
+        }
 
         for k, p in product_ids_to_logical_products.items():
             namespace = product_ids_to_namespaces.get(k)
@@ -169,11 +180,18 @@ def transform(c: CSAF_JSON) -> set[VulnerabilityRecordPair]:
             if not namespace:
                 debug_print(f"for {k} ({p}) skipping b/c no namespace")
                 continue
+            debug_print(f"{k}: ({p}) found namespace {namespace}")
             found = False
             for srpm_id in source_rpm_ids:
                 if c.product_tree.has_ancestor(k, srpm_id) or k.endswith(srpm_id):
                     found = True
                     debug_print(f"for {k} ({p}) found src rpm: {srpm_id}")
+            module_branch = next((m for m in rpm_module_branches if m in k), None)
+            if module_branch:
+                debug_print(f"for {k} ({p}) found rpm module branch: {module_branch}")
+                found = True
+            else:
+                debug_print(f"for {k} ({p}) no module branch in {rpm_module_branches}")
             if not found:
                 debug_print(f"skipping {k} ({p}) b/c no src rpm found", file=sys.stderr)
                 continue
