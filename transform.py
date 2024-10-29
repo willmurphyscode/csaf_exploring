@@ -41,6 +41,7 @@ RHEL_DESKTOP_RE = r"^Red Hat Enterprise Linux Desktop \(v\. (\d+)\)"
 RHEL_CLIENT_OPTIONAL_RE = r"Red Hat Enterprise Linux Client Optional \(v\. (\d+)\)"
 RHEL_CLIENT_RE = r"Red Hat Enterprise Linux Client \(v\. (\d+)\)"
 RHEL_RT_RE = r"Red Hat Enterprise Linux RT \(v\. (\d+)\)"
+RHEL_RT_RE2 = r"Red Hat Enterprise Linux for Real Time \(v\. (\d+)\)"
 RHEL_CRB_RE = r"Red Hat CodeReady Linux Builder \(v\. (\d+)\)"
 
 
@@ -69,6 +70,7 @@ def namespace_or_none_if_ignored(distro_like_name: str) -> str | None:
         RHEL_CLIENT_OPTIONAL_RE,
         RHEL_CLIENT_RE,
         RHEL_RT_RE,
+        RHEL_RT_RE2,
         RHEL_CRB_RE,
     ]
     for r in res:
