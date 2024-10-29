@@ -37,6 +37,7 @@ APP_STREAM_RE = r"Red Hat Enterprise Linux AppStream \(v\. (\d+)\)"
 BASE_OS_RE = r"Red Hat Enterprise Linux BaseOS \(v\. (\d+)\)"
 RHEL_5_SERVER_RE = r"Red Hat Enterprise Linux \(v\. (\d+) server\)"
 RHEL_5_SERVER_RE2 = r"^Red Hat Enterprise Linux Server \(v\. (\d+)\)"
+RHEL_CLIENT_OLD_RE = r"^Red Hat Enterprise Linux Desktop \(v\. (\d+) client\)"
 RHEL_DESKTOP_RE = r"^Red Hat Enterprise Linux Desktop \(v\. (\d+)\)"
 RHEL_CLIENT_OPTIONAL_RE = r"Red Hat Enterprise Linux Client Optional \(v\. (\d+)\)"
 RHEL_CLIENT_RE = r"Red Hat Enterprise Linux Client \(v\. (\d+)\)"
@@ -66,6 +67,7 @@ def namespace_or_none_if_ignored(distro_like_name: str) -> str | None:
         BASE_OS_RE,
         RHEL_5_SERVER_RE,
         RHEL_5_SERVER_RE2,
+        RHEL_CLIENT_OLD_RE,
         RHEL_DESKTOP_RE,
         RHEL_CLIENT_OPTIONAL_RE,
         RHEL_CLIENT_RE,
