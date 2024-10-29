@@ -44,11 +44,12 @@ RHEL_RT_RE = r"Red Hat Enterprise Linux RT \(v\. (\d+)\)"
 def debug_print(msg: str, file=sys.stderr):
     if "-v" not in sys.argv:
         return
-    filter = None
-    if "-g" in sys.argv:
-        ix = sys.argv.index("-g")
-        filter = sys.argv[ix + 1]
-    if filter and filter not in msg:
+    filters = set()
+    for i, v in enumerate(sys.argv):
+        if v == "-g" and len(sys.argv) >= i:
+            filters.add(sys.argv[i + 1])
+
+    if filters and not all(f in msg for f in filters):
         return
     print(msg, file=file)
 
@@ -113,6 +114,10 @@ def transform(c: CSAF_JSON) -> set[VulnerabilityRecordPair]:
             pid: c.product_tree.first_parent(pid)
             for pid in unaffected | fixed | not_fixed
         }
+        ids_to_second_parents = {
+            pid: c.product_tree.second_parent(pid)
+            for pid in unaffected | fixed | not_fixed
+        }
         distro_ids_to_names = {
             b.product.product_id: b.product.name
             for b in c.product_tree.branches[0].product_name_branches()
@@ -122,6 +127,11 @@ def transform(c: CSAF_JSON) -> set[VulnerabilityRecordPair]:
         # TODO: make this dict[str,str] where keys are original ids and values are cleaned up ids
         def clean_product_id(pid: str) -> str:
             p = trim_rpm_version_suffix(pid)
+            second_parent = ids_to_second_parents.get(pid)
+            if second_parent:
+                # p = p.removeprefix(second_parent)
+                p = second_parent
+                p = re.sub(r":[0-9]+\.[0-9]+:\d{19}:[a-fA-F0-9]{8}$", "", p)
             p = p.removeprefix(ids_to_first_parents.get(pid, ""))
             p = p.removeprefix(":").removesuffix("-devel").removesuffix("-headers")
             return p.lower()
@@ -156,8 +166,9 @@ def transform(c: CSAF_JSON) -> set[VulnerabilityRecordPair]:
                 continue
             found = False
             for srpm_id in source_rpm_ids:
-                if k.endswith(srpm_id):
+                if c.product_tree.has_ancestor(k, srpm_id) or k.endswith(srpm_id):
                     found = True
+                    debug_print(f"for {k} ({p}) found src rpm: {srpm_id}")
             if not found:
                 debug_print(f"skipping {k} ({p}) b/c no src rpm found", file=sys.stderr)
                 continue
